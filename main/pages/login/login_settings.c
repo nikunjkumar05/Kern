@@ -70,7 +70,8 @@ static void show_detail_page(void) {
   lv_obj_t *pol_label = theme_create_label(detail_screen, "Policy", true);
   lv_obj_align(pol_label, LV_ALIGN_CENTER, LV_HOR_RES / 4, -30);
 
-  policy_dropdown = theme_create_dropdown(detail_screen, "Single-sig\nMultisig");
+  policy_dropdown =
+      theme_create_dropdown(detail_screen, "Single-sig\nMultisig");
   wallet_policy_t cur_pol = settings_get_default_policy();
   lv_dropdown_set_selected(policy_dropdown,
                            (cur_pol == WALLET_POLICY_SINGLESIG) ? 0 : 1);
