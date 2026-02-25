@@ -392,18 +392,6 @@ static void dropdown_cb(lv_event_t *e) {
   }
 }
 
-static void dropdown_open_cb(lv_event_t *e) {
-  lv_obj_t *list = lv_dropdown_get_list(lv_event_get_target(e));
-  if (list) {
-    lv_obj_set_style_bg_color(list, disabled_color(), 0);
-    lv_obj_set_style_text_color(list, main_color(), 0);
-    lv_obj_set_style_bg_color(list, highlight_color(),
-                              LV_PART_SELECTED | LV_STATE_CHECKED);
-    lv_obj_set_style_bg_color(list, highlight_color(),
-                              LV_PART_SELECTED | LV_STATE_PRESSED);
-  }
-}
-
 void mnemonic_qr_page_create(lv_obj_t *parent, void (*return_cb)(void)) {
   if (!parent || !key_is_loaded())
     return;
@@ -448,16 +436,10 @@ void mnemonic_qr_page_create(lv_obj_t *parent, void (*return_cb)(void)) {
 
   back_button = ui_create_back_button(parent, back_cb);
 
-  qr_type_dropdown = lv_dropdown_create(top_bar);
-  lv_dropdown_set_options(qr_type_dropdown,
-                          "Plaintext\nSeedQR\nCompact SeedQR\nEncrypted");
+  qr_type_dropdown = theme_create_dropdown(
+      top_bar, "Plaintext\nSeedQR\nCompact SeedQR\nEncrypted");
   lv_obj_set_width(qr_type_dropdown, LV_PCT(40));
   lv_obj_align(qr_type_dropdown, LV_ALIGN_CENTER, -30, 0);
-  lv_obj_set_style_bg_color(qr_type_dropdown, disabled_color(), 0);
-  lv_obj_set_style_text_color(qr_type_dropdown, main_color(), 0);
-  lv_obj_set_style_text_font(qr_type_dropdown, theme_font_small(), 0);
-  lv_obj_set_style_border_color(qr_type_dropdown, highlight_color(), 0);
-  lv_obj_add_event_cb(qr_type_dropdown, dropdown_open_cb, LV_EVENT_READY, NULL);
   lv_obj_add_event_cb(qr_type_dropdown, dropdown_cb, LV_EVENT_VALUE_CHANGED,
                       NULL);
 

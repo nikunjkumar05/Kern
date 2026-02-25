@@ -1,5 +1,6 @@
 #include "key_confirmation.h"
 #include "../../core/key.h"
+#include "../../core/settings.h"
 #include "../../core/wallet.h"
 #include "../../qr/encoder.h"
 #include "../../ui/assets/icons_36.h"
@@ -28,8 +29,12 @@ static void loading_timer_cb(lv_timer_t *timer) {
     loading_timer = NULL;
   }
 
-  if (key_load_from_mnemonic(mnemonic_content, NULL, false)) {
-    if (!wallet_init(WALLET_NETWORK_MAINNET)) {
+  wallet_network_t net = settings_get_default_network();
+  wallet_policy_t pol = settings_get_default_policy();
+  wallet_set_policy(pol);
+  if (key_load_from_mnemonic(mnemonic_content, NULL,
+                             net == WALLET_NETWORK_TESTNET)) {
+    if (!wallet_init(net)) {
       dialog_show_error("Failed to initialize wallet", return_callback, 0);
       return;
     }

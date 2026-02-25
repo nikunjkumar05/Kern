@@ -9,9 +9,15 @@
 #include "../load_mnemonic/load_menu.h"
 #include "../new_mnemonic/new_mnemonic_menu.h"
 #include "about.h"
+#include "login_settings.h"
 
 static ui_menu_t *login_menu = NULL;
 static lv_obj_t *login_screen = NULL;
+
+static void return_from_settings_cb(void) {
+  login_settings_page_destroy();
+  login_page_show();
+}
 
 static void return_to_login_cb(void) {
   about_page_destroy();
@@ -38,7 +44,9 @@ static void new_mnemonic_cb(void) {
 }
 
 static void settings_cb(void) {
-  dialog_show_message("Login", "Settings not implemented yet");
+  login_page_hide();
+  login_settings_page_create(lv_screen_active(), return_from_settings_cb);
+  login_settings_page_show();
 }
 
 static void dev_tools_cb(void) {
@@ -59,7 +67,7 @@ void login_page_create(lv_obj_t *parent) {
   login_menu = ui_menu_create(login_screen, "Login", NULL);
   ui_menu_add_entry(login_menu, "Load Mnemonic", load_mnemonic_cb);
   ui_menu_add_entry(login_menu, "New Mnemonic", new_mnemonic_cb);
-  // ui_menu_add_entry(login_menu, "Settings", settings_cb);
+  ui_menu_add_entry(login_menu, "Settings", settings_cb);
   ui_menu_add_entry(login_menu, "Developer Tools", dev_tools_cb);
   ui_menu_add_entry(login_menu, "About", about_cb);
   ui_menu_show(login_menu);

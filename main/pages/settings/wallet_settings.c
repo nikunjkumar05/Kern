@@ -253,18 +253,6 @@ static void policy_dropdown_cb(lv_event_t *e) {
   }
 }
 
-static void dropdown_open_cb(lv_event_t *e) {
-  lv_obj_t *list = lv_dropdown_get_list(lv_event_get_target(e));
-  if (list) {
-    lv_obj_set_style_bg_color(list, disabled_color(), 0);
-    lv_obj_set_style_text_color(list, main_color(), 0);
-    lv_obj_set_style_bg_color(list, highlight_color(),
-                              LV_PART_SELECTED | LV_STATE_CHECKED);
-    lv_obj_set_style_bg_color(list, highlight_color(),
-                              LV_PART_SELECTED | LV_STATE_PRESSED);
-  }
-}
-
 static void add_fingerprint_pair(lv_obj_t *parent, const char *fp_hex,
                                  bool highlighted) {
   lv_color_t color = highlighted ? highlight_color() : secondary_color();
@@ -581,16 +569,10 @@ void wallet_settings_page_create(lv_obj_t *parent, void (*return_cb)(void)) {
   lv_obj_set_style_text_font(net_label, theme_font_small(), 0);
   lv_obj_set_style_text_color(net_label, secondary_color(), 0);
 
-  network_dropdown = lv_dropdown_create(net_col);
-  lv_dropdown_set_options(network_dropdown, "Mainnet\nTestnet");
+  network_dropdown = theme_create_dropdown(net_col, "Mainnet\nTestnet");
   lv_dropdown_set_selected(
       network_dropdown, (selected_network == WALLET_NETWORK_MAINNET) ? 0 : 1);
   lv_obj_set_width(network_dropdown, LV_PCT(100));
-  lv_obj_set_style_bg_color(network_dropdown, disabled_color(), 0);
-  lv_obj_set_style_text_color(network_dropdown, main_color(), 0);
-  lv_obj_set_style_text_font(network_dropdown, theme_font_small(), 0);
-  lv_obj_set_style_border_color(network_dropdown, highlight_color(), 0);
-  lv_obj_add_event_cb(network_dropdown, dropdown_open_cb, LV_EVENT_READY, NULL);
   lv_obj_add_event_cb(network_dropdown, network_dropdown_cb,
                       LV_EVENT_VALUE_CHANGED, NULL);
 
@@ -608,16 +590,10 @@ void wallet_settings_page_create(lv_obj_t *parent, void (*return_cb)(void)) {
   lv_obj_set_style_text_font(policy_label, theme_font_small(), 0);
   lv_obj_set_style_text_color(policy_label, secondary_color(), 0);
 
-  policy_dropdown = lv_dropdown_create(policy_col);
-  lv_dropdown_set_options(policy_dropdown, "Single-sig\nMultisig");
+  policy_dropdown = theme_create_dropdown(policy_col, "Single-sig\nMultisig");
   lv_dropdown_set_selected(
       policy_dropdown, (selected_policy == WALLET_POLICY_SINGLESIG) ? 0 : 1);
   lv_obj_set_width(policy_dropdown, LV_PCT(100));
-  lv_obj_set_style_bg_color(policy_dropdown, disabled_color(), 0);
-  lv_obj_set_style_text_color(policy_dropdown, main_color(), 0);
-  lv_obj_set_style_text_font(policy_dropdown, theme_font_small(), 0);
-  lv_obj_set_style_border_color(policy_dropdown, highlight_color(), 0);
-  lv_obj_add_event_cb(policy_dropdown, dropdown_open_cb, LV_EVENT_READY, NULL);
   lv_obj_add_event_cb(policy_dropdown, policy_dropdown_cb,
                       LV_EVENT_VALUE_CHANGED, NULL);
 

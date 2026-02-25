@@ -262,6 +262,33 @@ lv_obj_t *theme_create_flex_column(lv_obj_t *parent) {
   return cont;
 }
 
+static void dropdown_open_cb(lv_event_t *e) {
+  lv_obj_t *list = lv_dropdown_get_list(lv_event_get_target(e));
+  if (list) {
+    lv_obj_set_style_bg_color(list, COLOR_DISABLED, 0);
+    lv_obj_set_style_text_color(list, COLOR_WHITE, 0);
+    lv_obj_set_style_bg_color(list, COLOR_ORANGE,
+                              LV_PART_SELECTED | LV_STATE_CHECKED);
+    lv_obj_set_style_bg_color(list, COLOR_ORANGE,
+                              LV_PART_SELECTED | LV_STATE_PRESSED);
+  }
+}
+
+lv_obj_t *theme_create_dropdown(lv_obj_t *parent, const char *options) {
+  if (!parent)
+    return NULL;
+
+  lv_obj_t *dd = lv_dropdown_create(parent);
+  if (options)
+    lv_dropdown_set_options(dd, options);
+  lv_obj_set_style_bg_color(dd, COLOR_DISABLED, 0);
+  lv_obj_set_style_text_color(dd, COLOR_WHITE, 0);
+  lv_obj_set_style_text_font(dd, theme_font_small(), 0);
+  lv_obj_set_style_border_color(dd, COLOR_ORANGE, 0);
+  lv_obj_add_event_cb(dd, dropdown_open_cb, LV_EVENT_READY, NULL);
+  return dd;
+}
+
 lv_obj_t *theme_create_separator(lv_obj_t *parent) {
   if (!parent)
     return NULL;

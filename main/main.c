@@ -1,3 +1,4 @@
+#include "core/settings.h"
 #include "pages/login/login.h"
 #include "ui/assets/kern_logo_lvgl.h"
 #include "ui/theme.h"
@@ -9,11 +10,22 @@
 #include <freertos/FreeRTOS.h>
 #include <freertos/task.h>
 #include <lvgl.h>
+#include <nvs_flash.h>
 #include <wally_core.h>
 
 static const char *TAG = "KERN_MAIN";
 
 void app_main(void) {
+  // Initialize NVS for persistent settings
+  esp_err_t ret = nvs_flash_init();
+  if (ret == ESP_ERR_NVS_NO_FREE_PAGES ||
+      ret == ESP_ERR_NVS_NEW_VERSION_FOUND) {
+    nvs_flash_erase();
+    ret = nvs_flash_init();
+  }
+  ESP_ERROR_CHECK(ret);
+  settings_init();
+
   // Larger LVGL task stack: libwally descriptor parsing has deep call
   // chains that exceed the default 7168-byte stack during multisig validation
   lvgl_port_cfg_t lvgl_cfg = ESP_LVGL_PORT_INIT_CONFIG();
