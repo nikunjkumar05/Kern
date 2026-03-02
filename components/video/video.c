@@ -319,11 +319,9 @@ static esp_err_t stream_start(int fd) {
 
 static esp_err_t stream_stop(int fd) {
   int type = V4L2_BUF_TYPE_VIDEO_CAPTURE;
-  if (ioctl(fd, VIDIOC_STREAMOFF, &type)) {
-    ESP_LOGE(TAG, "STREAMOFF failed");
-    return ESP_FAIL;
-  }
-  xEventGroupSetBits(app_video.event_group, VIDEO_TASK_DELETE_DONE);
+  ioctl(fd, VIDIOC_STREAMOFF, &type);
+  if (app_video.event_group)
+    xEventGroupSetBits(app_video.event_group, VIDEO_TASK_DELETE_DONE);
   ESP_LOGI(TAG, "Stream stopped");
   return ESP_OK;
 }
@@ -333,19 +331,21 @@ static void stream_task(void *arg) {
   ESP_ERROR_CHECK(stream_start(fd));
 
   while (1) {
-    ESP_ERROR_CHECK(receive_frame(fd));
+    if (xEventGroupGetBits(app_video.event_group) & VIDEO_TASK_DELETE)
+      break;
+
+    if (receive_frame(fd) != ESP_OK)
+      break;
 
     if (app_video.v4l2_buf.flags & V4L2_BUF_FLAG_DONE)
       process_frame();
 
-    ESP_ERROR_CHECK(release_frame(fd));
-
-    if (xEventGroupGetBits(app_video.event_group) & VIDEO_TASK_DELETE) {
-      xEventGroupClearBits(app_video.event_group, VIDEO_TASK_DELETE);
-      ESP_ERROR_CHECK(stream_stop(fd));
-      vTaskDelete(NULL);
-    }
+    if (release_frame(fd) != ESP_OK)
+      break;
   }
+
+  stream_stop(fd);
+  vTaskDelete(NULL);
 }
 
 esp_err_t app_video_stream_task_start(int fd, int core_id) {
@@ -365,6 +365,8 @@ esp_err_t app_video_stream_task_start(int fd, int core_id) {
 }
 
 esp_err_t app_video_stream_task_stop(int fd) {
+  if (!app_video.event_group)
+    return ESP_OK;
   xEventGroupSetBits(app_video.event_group, VIDEO_TASK_DELETE);
   return ESP_OK;
 }
@@ -379,6 +381,10 @@ esp_err_t app_video_close(int fd) {
   esp_err_t ret = ESP_OK;
 
   app_video_stream_task_stop(fd);
+  if (fd >= 0) {
+    int type = V4L2_BUF_TYPE_VIDEO_CAPTURE;
+    ioctl(fd, VIDIOC_STREAMOFF, &type);
+  }
 
   if (app_video.event_group) {
     xEventGroupWaitBits(app_video.event_group, VIDEO_TASK_DELETE_DONE, pdFALSE,
