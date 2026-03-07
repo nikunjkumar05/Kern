@@ -3,6 +3,7 @@
 #include "about.h"
 #include "../../ui/assets/kern_logo_lvgl.h"
 #include "../../ui/theme.h"
+#include <esp_app_desc.h>
 #include <lvgl.h>
 #include <string.h>
 
@@ -27,13 +28,19 @@ void about_page_create(lv_obj_t *parent, void (*return_cb)(void)) {
                       NULL);
 
   theme_create_page_title(about_screen, "About");
-  kern_logo_with_text(about_screen, 0, 130);
+  lv_obj_t *logo = kern_logo_with_text(about_screen, 0, 130);
+
+  const esp_app_desc_t *app_desc = esp_app_get_description();
+  char ver_text[48];
+  snprintf(ver_text, sizeof(ver_text), "Version: %s", app_desc->version);
+  lv_obj_t *ver_label = theme_create_label(about_screen, ver_text, true);
+  lv_obj_align_to(ver_label, logo, LV_ALIGN_OUT_BOTTOM_MID, 0, 10);
 
   lv_obj_t *qr = lv_qrcode_create(about_screen);
   lv_qrcode_set_size(qr, 250);
   const char *data = "https://github.com/odudex/Kern";
   lv_qrcode_update(qr, data, strlen(data));
-  lv_obj_align(qr, LV_ALIGN_CENTER, 0, 140);
+  lv_obj_align_to(qr, ver_label, LV_ALIGN_OUT_BOTTOM_MID, 0, 30);
   lv_obj_set_style_border_color(qr, lv_color_white(), 0);
   lv_obj_set_style_border_width(qr, 10, 0);
 

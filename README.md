@@ -77,6 +77,33 @@ CONFIG_CAM_MOTOR_DW9714=y
 CONFIG_CAMERA_OV5647_ENABLE_MOTOR_BY_GPIO0=y
 ```
 
+## Flashing Pre-releases
+
+Pre-release firmware is provided **for testing purposes only**. Do not use pre-release builds as a signer for real savings.
+
+### Requirements
+
+- Python 3
+- USB cable connected to the Waveshare board
+
+### Steps
+
+1. Download the firmware binary from the [Releases](https://github.com/odudex/Kern/releases) page.
+
+2. Create a Python virtual environment and install esptool:
+
+```bash
+python3 -m venv venv
+source venv/bin/activate
+pip install esptool
+```
+
+3. Flash the firmware:
+
+```bash
+esptool.py --chip esp32p4 --baud 460800 write-flash 0x0 kern-<version>.bin
+```
+
 # References
 Kern is strongly inspired by [Krux](https://github.com/selfcustody/krux), sharing similar but simplified UI elements and flow.
 
@@ -135,7 +162,7 @@ The simplicity and UI polish of [SeedSigner](https://github.com/SeedSigner/seeds
 
 - Security
   - ✅ KEF encryption
-  - ❌ PIN
+  - ✅ PIN
   - ❌ OTP based secure boot
   - ❌ Flash/RAM encryption
 
