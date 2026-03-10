@@ -6,6 +6,7 @@
 #include "sign.h"
 #include "../../../components/cUR/src/types/psbt.h"
 #include "../../core/key.h"
+#include "../../core/message_sign.h"
 #include "../../core/psbt.h"
 #include "../../core/storage.h"
 #include "../../core/wallet.h"
@@ -59,6 +60,10 @@ static bool is_testnet = false;
 static int scanned_qr_format = FORMAT_NONE;
 static bool skip_verification = false;
 
+// Message signing data
+static parsed_sign_message_t current_message = {0};
+static bool is_message_sign = false;
+
 // Forward declarations
 static void back_button_cb(lv_event_t *e);
 static void return_from_qr_scanner_cb(void);
@@ -75,6 +80,8 @@ static bool check_psbt_mismatch(void);
 static void mismatch_dialog_cb(void *user_data);
 static void show_multisig_options_menu(void);
 static void return_from_descriptor_scanner_cb(void);
+static void create_message_sign_display(void);
+static void message_sign_button_cb(lv_event_t *e);
 
 // Format satoshis as Bitcoin with visual grouping: "1.00 000 000"
 static void format_btc(char *buf, size_t buf_size, uint64_t sats) {
@@ -254,7 +261,12 @@ static void return_from_qr_scanner_cb(void) {
     // Other formats (PMOFN, NONE) return base64 encoded data
     qr_content = qr_scanner_get_completed_content();
     if (qr_content) {
-      parse_success = parse_and_display_psbt(qr_content);
+      if (message_sign_parse(qr_content, &current_message)) {
+        is_message_sign = true;
+        parse_success = true;
+      } else {
+        parse_success = parse_and_display_psbt(qr_content);
+      }
       free(qr_content);
     }
   }
@@ -263,18 +275,22 @@ static void return_from_qr_scanner_cb(void) {
   qr_scanner_page_destroy();
 
   if (parse_success) {
-    scanned_qr_format = detected_format;
-
-    // Check if this is a multisig PSBT without a loaded descriptor
-    if (psbt_is_multisig(current_psbt) && !wallet_has_descriptor()) {
-      show_multisig_options_menu();
+    if (is_message_sign) {
+      create_message_sign_display();
     } else {
-      if (!create_psbt_info_display()) {
-        dialog_show_error("Invalid PSBT data", return_callback, 0);
+      scanned_qr_format = detected_format;
+
+      // Check if this is a multisig PSBT without a loaded descriptor
+      if (psbt_is_multisig(current_psbt) && !wallet_has_descriptor()) {
+        show_multisig_options_menu();
+      } else {
+        if (!create_psbt_info_display()) {
+          dialog_show_error("Invalid PSBT data", return_callback, 0);
+        }
       }
     }
   } else {
-    dialog_show_error("Invalid PSBT format", return_callback, 0);
+    dialog_show_error("Unrecognized QR format", return_callback, 0);
   }
 }
 
@@ -789,6 +805,9 @@ static void cleanup_psbt_data(void) {
     signed_psbt_base64 = NULL;
   }
 
+  message_sign_free_parsed(&current_message);
+  is_message_sign = false;
+
   is_testnet = false;
   scanned_qr_format = FORMAT_NONE;
   skip_verification = false;
@@ -919,6 +938,130 @@ static void show_multisig_options_menu(void) {
   ui_menu_add_entry(multisig_menu, "Sign Without Verification",
                     sign_without_verification_cb);
   ui_menu_show(multisig_menu);
+}
+
+static void create_message_sign_display(void) {
+  if (!sign_screen) {
+    return;
+  }
+
+  wallet_network_t net = wallet_get_network();
+  bool testnet = (net == WALLET_NETWORK_TESTNET);
+
+  char *address = NULL;
+  if (!message_sign_get_address(current_message.derivation_path, testnet,
+                                &address)) {
+    dialog_show_error("Failed to derive address", return_callback, 0);
+    return;
+  }
+
+  psbt_info_container = lv_obj_create(sign_screen);
+  lv_obj_set_size(psbt_info_container, LV_PCT(100), LV_PCT(100));
+  lv_obj_set_flex_flow(psbt_info_container, LV_FLEX_FLOW_COLUMN);
+  lv_obj_set_flex_align(psbt_info_container, LV_FLEX_ALIGN_START,
+                        LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_CENTER);
+  lv_obj_set_style_pad_all(psbt_info_container, 10, 0);
+  lv_obj_set_style_pad_gap(psbt_info_container, 10, 0);
+  theme_apply_screen(psbt_info_container);
+  lv_obj_add_flag(psbt_info_container, LV_OBJ_FLAG_SCROLLABLE);
+
+  // Title
+  theme_create_page_title(psbt_info_container, "Sign Message");
+
+  // Derivation path
+  lv_obj_t *path_title =
+      theme_create_label(psbt_info_container, "Path:", false);
+  theme_apply_label(path_title, true);
+  lv_obj_set_style_text_color(path_title, secondary_color(), 0);
+
+  lv_obj_t *path_label = theme_create_label(
+      psbt_info_container, current_message.derivation_path, false);
+  lv_obj_set_width(path_label, LV_PCT(100));
+
+  // Address
+  lv_obj_t *addr_title =
+      theme_create_label(psbt_info_container, "Address:", false);
+  theme_apply_label(addr_title, true);
+  lv_obj_set_style_text_color(addr_title, secondary_color(), 0);
+
+  lv_obj_t *addr_label =
+      create_address_label(psbt_info_container, address, highlight_color());
+  lv_obj_set_width(addr_label, LV_PCT(100));
+  lv_label_set_long_mode(addr_label, LV_LABEL_LONG_WRAP);
+
+  wally_free_string(address);
+
+  // Separator
+  lv_obj_t *separator = lv_obj_create(psbt_info_container);
+  lv_obj_set_size(separator, LV_PCT(100), 2);
+  lv_obj_set_style_bg_color(separator, main_color(), 0);
+  lv_obj_set_style_bg_opa(separator, LV_OPA_COVER, 0);
+  lv_obj_set_style_border_width(separator, 0, 0);
+
+  // Message
+  lv_obj_t *msg_title =
+      theme_create_label(psbt_info_container, "Message:", false);
+  theme_apply_label(msg_title, true);
+  lv_obj_set_style_text_color(msg_title, secondary_color(), 0);
+
+  lv_obj_t *msg_label =
+      theme_create_label(psbt_info_container, current_message.message, false);
+  lv_obj_set_width(msg_label, LV_PCT(100));
+  lv_label_set_long_mode(msg_label, LV_LABEL_LONG_WRAP);
+
+  // Buttons
+  lv_obj_t *button_container = lv_obj_create(psbt_info_container);
+  lv_obj_set_size(button_container, LV_PCT(100), LV_SIZE_CONTENT);
+  lv_obj_set_flex_flow(button_container, LV_FLEX_FLOW_ROW);
+  lv_obj_set_flex_align(button_container, LV_FLEX_ALIGN_SPACE_BETWEEN,
+                        LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
+  lv_obj_set_style_pad_all(button_container, 0, 0);
+  lv_obj_set_style_pad_gap(button_container, 10, 0);
+  lv_obj_set_style_bg_opa(button_container, LV_OPA_TRANSP, 0);
+  lv_obj_set_style_border_width(button_container, 0, 0);
+
+  lv_obj_t *back_button = lv_btn_create(button_container);
+  lv_obj_set_size(back_button, LV_PCT(45), LV_SIZE_CONTENT);
+  theme_apply_touch_button(back_button, false);
+  lv_obj_add_event_cb(back_button, back_button_cb, LV_EVENT_CLICKED, NULL);
+  lv_obj_clear_flag(back_button, LV_OBJ_FLAG_EVENT_BUBBLE);
+
+  lv_obj_t *back_label = lv_label_create(back_button);
+  lv_label_set_text(back_label, "Back");
+  lv_obj_center(back_label);
+  theme_apply_button_label(back_label, false);
+
+  lv_obj_t *sign_button = lv_btn_create(button_container);
+  lv_obj_set_size(sign_button, LV_PCT(45), LV_SIZE_CONTENT);
+  theme_apply_touch_button(sign_button, false);
+  lv_obj_add_event_cb(sign_button, message_sign_button_cb, LV_EVENT_CLICKED,
+                       NULL);
+  lv_obj_clear_flag(sign_button, LV_OBJ_FLAG_EVENT_BUBBLE);
+
+  lv_obj_t *sign_label = lv_label_create(sign_button);
+  lv_label_set_text(sign_label, "Sign");
+  lv_obj_center(sign_label);
+  theme_apply_button_label(sign_label, false);
+}
+
+static void message_sign_button_cb(lv_event_t *e) {
+  char *sig_b64 = NULL;
+  if (!message_sign_sign(current_message.derivation_path,
+                         current_message.message, &sig_b64)) {
+    dialog_show_error("Failed to sign message", NULL, 2000);
+    return;
+  }
+
+  saved_return_callback = return_callback;
+
+  qr_viewer_page_create(lv_screen_active(), sig_b64, "Message Signature",
+                         return_from_qr_viewer_cb);
+  wally_free_string(sig_b64);
+
+  sign_page_hide();
+  sign_page_destroy();
+
+  qr_viewer_page_show();
 }
 
 void sign_page_create(lv_obj_t *parent, void (*return_cb)(void)) {
