@@ -1,13 +1,14 @@
 #include "home.h"
 #include "../../core/key.h"
 #include "../../core/wallet.h"
+#include "../../ui/assets/icons_24.h"
 #include "../../ui/dialog.h"
 #include "../../ui/input_helpers.h"
 #include "../../ui/key_info.h"
 #include "../../ui/menu.h"
 #include "../../ui/theme.h"
+#include "../scan/scan.h"
 #include "../settings/wallet_settings.h"
-#include "../sign/sign.h"
 #include "addresses.h"
 #include "backup/backup_menu.h"
 #include "public_key.h"
@@ -21,11 +22,11 @@ static ui_menu_t *main_menu = NULL;
 static void menu_backup_cb(void);
 static void menu_xpub_cb(void);
 static void menu_addresses_cb(void);
-static void menu_sign_cb(void);
+static void menu_scan_cb(void);
 static void return_from_backup_menu_cb(void);
 static void return_from_public_key_cb(void);
 static void return_from_addresses_cb(void);
-static void return_from_sign_cb(void);
+static void return_from_scan_cb(void);
 static void return_from_wallet_settings_cb(void);
 
 static void menu_backup_cb(void) {
@@ -46,10 +47,10 @@ static void menu_addresses_cb(void) {
   addresses_page_show();
 }
 
-static void menu_sign_cb(void) {
+static void menu_scan_cb(void) {
   home_page_hide();
-  sign_page_create(lv_screen_active(), return_from_sign_cb);
-  sign_page_show();
+  scan_page_create(lv_screen_active(), return_from_scan_cb);
+  scan_page_show();
 }
 
 static void reboot_confirmed_cb(bool result, void *user_data) {
@@ -90,9 +91,9 @@ static void return_from_addresses_cb(void) {
   refresh_home_if_needed();
 }
 
-static void return_from_sign_cb(void) {
-  sign_page_destroy();
-  home_page_show();
+static void return_from_scan_cb(void) {
+  scan_page_destroy();
+  refresh_home_if_needed();
 }
 
 static void settings_button_cb(lv_event_t *e) {
@@ -124,7 +125,7 @@ void home_page_create(lv_obj_t *parent) {
   lv_obj_t *header = ui_key_info_create(main_menu->container);
   lv_obj_move_to_index(header, 0);
 
-  ui_menu_add_entry(main_menu, "Sign", menu_sign_cb);
+  ui_menu_add_entry(main_menu, ICON_QR_CODE "  Scan", menu_scan_cb);
   ui_menu_add_entry(main_menu, "Extended Public Key", menu_xpub_cb);
   ui_menu_add_entry(main_menu, "Addresses", menu_addresses_cb);
   ui_menu_add_entry(main_menu, "Back Up", menu_backup_cb);

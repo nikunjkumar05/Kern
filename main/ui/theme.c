@@ -1,4 +1,6 @@
 #include "theme.h"
+#include "assets/icons_24.h"
+#include "assets/icons_36.h"
 
 // Minimalist theme colors
 #define COLOR_BG lv_color_hex(0x000000)       // Black background
@@ -15,7 +17,18 @@
 // Spacing constants
 #define DEFAULT_PADDING 30
 
-void theme_init(void) {}
+// Mutable font copies with icon fallbacks
+static lv_font_t font_small;
+static lv_font_t font_medium;
+
+void theme_init(void) {
+  // Copy const fonts to mutable structs so we can set fallbacks
+  font_small = lv_font_montserrat_24;
+  font_small.fallback = &icons_24;
+
+  font_medium = lv_font_montserrat_36;
+  font_medium.fallback = &icons_36;
+}
 
 lv_color_t bg_color(void) { return COLOR_BG; }
 
@@ -38,9 +51,9 @@ lv_color_t no_color(void) { return COLOR_NO; }
 lv_color_t cyan_color(void) { return COLOR_CYAN; }
 
 // Theme fonts
-const lv_font_t *theme_font_small(void) { return &lv_font_montserrat_24; }
+const lv_font_t *theme_font_small(void) { return &font_small; }
 
-const lv_font_t *theme_font_medium(void) { return &lv_font_montserrat_36; }
+const lv_font_t *theme_font_medium(void) { return &font_medium; }
 
 int theme_get_button_width(void) { return 150; }
 

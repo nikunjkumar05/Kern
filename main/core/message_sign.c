@@ -108,10 +108,9 @@ bool message_sign_sign(const char *derivation_path, const char *message,
   // signing (EC_FLAG_SCHNORR) — to be implemented when taproot support is
   // added.
   unsigned char sig[EC_SIGNATURE_RECOVERABLE_LEN];
-  ret = wally_ec_sig_from_bytes(derived_key->priv_key + 1, EC_PRIVATE_KEY_LEN,
-                                hash, EC_MESSAGE_HASH_LEN,
-                                EC_FLAG_ECDSA | EC_FLAG_RECOVERABLE, sig,
-                                sizeof(sig));
+  ret = wally_ec_sig_from_bytes(
+      derived_key->priv_key + 1, EC_PRIVATE_KEY_LEN, hash, EC_MESSAGE_HASH_LEN,
+      EC_FLAG_ECDSA | EC_FLAG_RECOVERABLE, sig, sizeof(sig));
 
   // Securely clear private key material
   secure_memzero(hash, sizeof(hash));

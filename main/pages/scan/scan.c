@@ -1,15 +1,17 @@
 /*
- * Sign Page
- * Handles PSBT transaction signing
+ * Scan Page
+ * Universal QR content detection: PSBT, message, descriptor, address, mnemonic
  */
 
-#include "sign.h"
+#include "scan.h"
+#include "../../../components/cUR/src/types/bytes_type.h"
 #include "../../../components/cUR/src/types/psbt.h"
 #include "../../core/key.h"
 #include "../../core/message_sign.h"
 #include "../../core/psbt.h"
 #include "../../core/storage.h"
 #include "../../core/wallet.h"
+#include "../../qr/encoder.h"
 #include "../../qr/parser.h"
 #include "../../qr/scanner.h"
 #include "../../qr/viewer.h"
@@ -18,12 +20,17 @@
 #include "../../ui/menu.h"
 #include "../../ui/sankey.h"
 #include "../../ui/theme.h"
+#include "../../utils/secure_mem.h"
 #include "../load_descriptor_storage.h"
+#include "../shared/address_checker.h"
 #include "../shared/descriptor_loader.h"
 #include <esp_log.h>
 #include <lvgl.h>
 #include <stdio.h>
 #include <string.h>
+#include <wally_address.h>
+#include <wally_bip32.h>
+#include <wally_bip39.h>
 #include <wally_core.h>
 #include <wally_psbt.h>
 #include <wally_psbt_members.h>
@@ -45,7 +52,7 @@ typedef struct {
 } classified_output_t;
 
 // UI components
-static lv_obj_t *sign_screen = NULL;
+static lv_obj_t *scan_screen = NULL;
 static lv_obj_t *psbt_info_container = NULL;
 static sankey_diagram_t *tx_diagram = NULL;
 static ui_menu_t *multisig_menu = NULL;
@@ -63,6 +70,9 @@ static bool skip_verification = false;
 // Message signing data
 static parsed_sign_message_t current_message = {0};
 static bool is_message_sign = false;
+
+// Mnemonic data
+static char *scanned_mnemonic = NULL;
 
 // Forward declarations
 static void back_button_cb(lv_event_t *e);
@@ -82,6 +92,9 @@ static void show_multisig_options_menu(void);
 static void return_from_descriptor_scanner_cb(void);
 static void create_message_sign_display(void);
 static void message_sign_button_cb(lv_event_t *e);
+static void handle_descriptor_content(const char *descriptor_str);
+static void handle_address_content(const char *content);
+static void handle_mnemonic_content(const char *data, size_t len);
 
 // Format satoshis as Bitcoin with visual grouping: "1.00 000 000"
 static void format_btc(char *buf, size_t buf_size, uint64_t sats) {
@@ -99,19 +112,15 @@ static void format_btc(char *buf, size_t buf_size, uint64_t sats) {
 static lv_obj_t *create_address_label(lv_obj_t *parent, const char *address,
                                       lv_color_t highlight) {
   size_t len = strlen(address);
-  // Allocate buffer for recolor codes: #RRGGBB + first6 + # + middle + #RRGGBB
-  // + last6 + # + null
   char *formatted = malloc(len + 32);
   if (!formatted) {
     return theme_create_label(parent, address, false);
   }
 
-  // Convert lv_color_t to hex string for recolor
   lv_color32_t c32 = lv_color_to_32(highlight, LV_OPA_COVER);
   uint32_t color_hex = (c32.red << 16) | (c32.green << 8) | c32.blue;
 
   if (len > 12) {
-    // Format: #RRGGBB first6# middle #RRGGBB last6#
     char first[7], last[7];
     strncpy(first, address, 6);
     first[6] = '\0';
@@ -121,7 +130,6 @@ static lv_obj_t *create_address_label(lv_obj_t *parent, const char *address,
     snprintf(formatted, len + 32, "#%06X %s#%.*s#%06X %s#", (unsigned)color_hex,
              first, (int)(len - 12), address + 6, (unsigned)color_hex, last);
   } else {
-    // Address too short, just highlight it all
     snprintf(formatted, len + 32, "#%06X %s#", (unsigned)color_hex, address);
   }
 
@@ -143,19 +151,16 @@ static lv_obj_t *create_btc_value_row(lv_obj_t *parent, const char *prefix,
                         LV_FLEX_ALIGN_START);
   lv_obj_set_style_pad_column(row, 4, 0);
 
-  // Prefix label (e.g., "Fee:" or "Receive #0:")
   lv_obj_t *prefix_label = lv_label_create(row);
   lv_label_set_text(prefix_label, prefix);
   lv_obj_set_style_text_font(prefix_label, theme_font_small(), 0);
   lv_obj_set_style_text_color(prefix_label, color, 0);
 
-  // Bitcoin icon
   lv_obj_t *icon_label = lv_label_create(row);
   lv_label_set_text(icon_label, ICON_BITCOIN);
   lv_obj_set_style_text_font(icon_label, &icons_24, 0);
   lv_obj_set_style_text_color(icon_label, color, 0);
 
-  // Formatted value
   char btc_str[32];
   format_btc(btc_str, sizeof(btc_str), sats);
   lv_obj_t *value_label = lv_label_create(row);
@@ -174,12 +179,10 @@ static output_type_t classify_output(size_t output_index,
   bool is_change = false;
   uint32_t address_index = 0;
 
-  // If skipping verification, treat all outputs as spend
   if (skip_verification) {
     return OUTPUT_TYPE_SPEND;
   }
 
-  // For multisig with loaded descriptor, use descriptor-based verification
   if (psbt_is_multisig(current_psbt) && wallet_has_descriptor()) {
     if (psbt_verify_output_with_descriptor(current_psbt, output_index,
                                            global_tx, &is_change,
@@ -190,13 +193,11 @@ static output_type_t classify_output(size_t output_index,
     return OUTPUT_TYPE_SPEND;
   }
 
-  // Single-sig: Check if output has verified derivation path for our wallet
   if (!psbt_get_output_derivation(current_psbt, output_index, is_testnet,
                                   &is_change, &address_index)) {
     return OUTPUT_TYPE_SPEND;
   }
 
-  // Verify scriptPubKey matches derived address
   unsigned char expected_script[WALLY_WITNESSSCRIPT_MAX_LEN];
   size_t expected_script_len;
 
@@ -217,8 +218,52 @@ static void back_button_cb(lv_event_t *e) {
   }
 }
 
+// --- Content detection ---
+
+static bool is_descriptor_prefix(const char *data) {
+  return strncmp(data, "wsh(", 4) == 0 || strncmp(data, "sh(", 3) == 0 ||
+         strncmp(data, "wpkh(", 5) == 0 || strncmp(data, "pkh(", 4) == 0 ||
+         strncmp(data, "tr(", 3) == 0;
+}
+
+static bool is_bluewallet_descriptor(const char *data) {
+  return strstr(data, "Policy:") != NULL;
+}
+
+static bool is_valid_address(const char *data) {
+  const char *addr = data;
+  char *stripped = NULL;
+
+  // Strip BIP21 prefix
+  if (strncasecmp(data, "bitcoin:", 8) == 0) {
+    const char *start = data + 8;
+    const char *query = strchr(start, '?');
+    size_t addr_len = query ? (size_t)(query - start) : strlen(start);
+    stripped = strndup(start, addr_len);
+    if (!stripped)
+      return false;
+    addr = stripped;
+  }
+
+  const char *hrp =
+      (wallet_get_network() == WALLET_NETWORK_MAINNET) ? "bc" : "tb";
+  uint32_t wally_net = (wallet_get_network() == WALLET_NETWORK_MAINNET)
+                           ? WALLY_NETWORK_BITCOIN_MAINNET
+                           : WALLY_NETWORK_BITCOIN_TESTNET;
+  unsigned char script[128];
+  size_t written = 0;
+  bool valid =
+      (wally_addr_segwit_to_bytes(addr, hrp, 0, script, sizeof(script),
+                                  &written) == WALLY_OK) ||
+      (wally_address_to_scriptpubkey(addr, wally_net, script, sizeof(script),
+                                     &written) == WALLY_OK);
+  free(stripped);
+  return valid;
+}
+
+// --- Main scanner callback with two-layer detection ---
+
 static void return_from_qr_scanner_cb(void) {
-  // Get the format first (before destroying scanner)
   int detected_format = qr_scanner_get_format();
 
   char *qr_content = NULL;
@@ -231,24 +276,49 @@ static void return_from_qr_scanner_cb(void) {
     size_t cbor_len = 0;
 
     if (qr_scanner_get_ur_result(&ur_type, &cbor_data, &cbor_len)) {
-      // Decode PSBT from UR CBOR
-      psbt_data_t *psbt_data = psbt_from_cbor(cbor_data, cbor_len);
-      if (psbt_data) {
-        // Get raw PSBT bytes and parse directly without base64 conversion
-        size_t psbt_len;
-        const uint8_t *psbt_bytes = psbt_get_data(psbt_data, &psbt_len);
-
-        if (psbt_bytes) {
-          cleanup_psbt_data();
-          parse_success = (wally_psbt_from_bytes(psbt_bytes, psbt_len, 0,
-                                                 &current_psbt) == WALLY_OK);
+      // Layer 1: UR type hints
+      if (ur_type && strcmp(ur_type, "crypto-psbt") == 0) {
+        // PSBT via UR
+        psbt_data_t *psbt_data = psbt_from_cbor(cbor_data, cbor_len);
+        if (psbt_data) {
+          size_t psbt_len;
+          const uint8_t *psbt_bytes = psbt_get_data(psbt_data, &psbt_len);
+          if (psbt_bytes) {
+            cleanup_psbt_data();
+            parse_success = (wally_psbt_from_bytes(psbt_bytes, psbt_len, 0,
+                                                   &current_psbt) == WALLY_OK);
+          }
+          psbt_free(psbt_data);
         }
-        psbt_free(psbt_data);
+      } else if (ur_type && (strcmp(ur_type, "crypto-output") == 0 ||
+                             strcmp(ur_type, "crypto-account") == 0)) {
+        // Descriptor via UR — extract before destroying scanner
+        char *desc = descriptor_extract_from_scanner();
+        qr_scanner_page_hide();
+        qr_scanner_page_destroy();
+        if (desc) {
+          handle_descriptor_content(desc);
+          free(desc);
+        } else {
+          dialog_show_error("Failed to parse descriptor", return_callback, 0);
+        }
+        return;
+      } else if (ur_type && strcmp(ur_type, "bytes") == 0) {
+        // UR bytes: decode to string, fall through to Layer 2
+        bytes_data_t *bytes = bytes_from_cbor(cbor_data, cbor_len);
+        if (bytes) {
+          size_t len = 0;
+          const uint8_t *data = bytes_get_data(bytes, &len);
+          if (data && len > 0) {
+            qr_content = strndup((const char *)data, len);
+            qr_content_len = len;
+          }
+          bytes_free(bytes);
+        }
       }
     }
   } else if (detected_format == FORMAT_BBQR) {
-    // BBQr returns raw binary PSBT data - parse directly without base64
-    // conversion
+    // BBQr returns raw binary PSBT data
     qr_content = qr_scanner_get_completed_content_with_len(&qr_content_len);
     if (qr_content && qr_content_len > 0) {
       cleanup_psbt_data();
@@ -256,19 +326,62 @@ static void return_from_qr_scanner_cb(void) {
           (wally_psbt_from_bytes((const uint8_t *)qr_content, qr_content_len, 0,
                                  &current_psbt) == WALLY_OK);
       free(qr_content);
+      qr_content = NULL;
     }
   } else {
-    // Other formats (PMOFN, NONE) return base64 encoded data
-    qr_content = qr_scanner_get_completed_content();
-    if (qr_content) {
-      if (message_sign_parse(qr_content, &current_message)) {
-        is_message_sign = true;
-        parse_success = true;
-      } else {
-        parse_success = parse_and_display_psbt(qr_content);
-      }
-      free(qr_content);
+    // Other formats (PMOFN, NONE) — get content with length for binary formats
+    qr_content = qr_scanner_get_completed_content_with_len(&qr_content_len);
+  }
+
+  // Layer 2: plaintext/binary heuristics — try each parser in priority order
+  if (!parse_success && qr_content) {
+    // 1. Message
+    if (message_sign_parse(qr_content, &current_message)) {
+      is_message_sign = true;
+      parse_success = true;
     }
+
+    // 2. PSBT (base64)
+    if (!parse_success) {
+      parse_success = parse_and_display_psbt(qr_content);
+    }
+
+    // 3. Descriptor
+    if (!parse_success && (is_descriptor_prefix(qr_content) ||
+                           is_bluewallet_descriptor(qr_content))) {
+      qr_scanner_page_hide();
+      qr_scanner_page_destroy();
+      handle_descriptor_content(qr_content);
+      free(qr_content);
+      return;
+    }
+
+    // 4. Address
+    if (!parse_success && is_valid_address(qr_content)) {
+      qr_scanner_page_hide();
+      qr_scanner_page_destroy();
+      handle_address_content(qr_content);
+      free(qr_content);
+      return;
+    }
+
+    // 5. Mnemonic
+    if (!parse_success) {
+      char *mnemonic =
+          mnemonic_qr_to_mnemonic(qr_content, qr_content_len, NULL);
+      if (mnemonic && bip39_mnemonic_validate(NULL, mnemonic) == WALLY_OK) {
+        free(mnemonic);
+        qr_scanner_page_hide();
+        qr_scanner_page_destroy();
+        handle_mnemonic_content(qr_content, qr_content_len);
+        free(qr_content);
+        return;
+      }
+      SECURE_FREE_STRING(mnemonic);
+    }
+
+    free(qr_content);
+    qr_content = NULL;
   }
 
   qr_scanner_page_hide();
@@ -280,7 +393,6 @@ static void return_from_qr_scanner_cb(void) {
     } else {
       scanned_qr_format = detected_format;
 
-      // Check if this is a multisig PSBT without a loaded descriptor
       if (psbt_is_multisig(current_psbt) && !wallet_has_descriptor()) {
         show_multisig_options_menu();
       } else {
@@ -293,6 +405,157 @@ static void return_from_qr_scanner_cb(void) {
     dialog_show_error("Unrecognized QR format", return_callback, 0);
   }
 }
+
+// --- Descriptor handler ---
+
+static void descriptor_loaded_info_cb(void *user_data) {
+  (void)user_data;
+  if (return_callback)
+    return_callback();
+}
+
+static void scan_descriptor_validation_cb(descriptor_validation_result_t result,
+                                          void *user_data) {
+  (void)user_data;
+
+  if (result == VALIDATION_SUCCESS) {
+    dialog_show_info("Descriptor Loaded", "Wallet descriptor updated",
+                     descriptor_loaded_info_cb, NULL, DIALOG_STYLE_FULLSCREEN);
+    return;
+  }
+
+  descriptor_loader_show_error(result);
+  if (return_callback)
+    return_callback();
+}
+
+static void handle_descriptor_content(const char *descriptor_str) {
+  descriptor_loader_process_string(descriptor_str,
+                                   scan_descriptor_validation_cb, NULL);
+}
+
+// --- Address handler ---
+
+static void address_found_cb(void) {
+  address_checker_destroy();
+  if (return_callback)
+    return_callback();
+}
+
+static void address_not_found_cb(void) {
+  address_checker_destroy();
+  if (return_callback)
+    return_callback();
+}
+
+static void handle_address_content(const char *content) {
+  // For multisig without descriptor, we can't verify addresses
+  if (wallet_get_policy() == WALLET_POLICY_MULTISIG &&
+      !wallet_has_descriptor()) {
+    dialog_show_error("Load a descriptor first to verify multisig addresses",
+                      return_callback, 0);
+    return;
+  }
+
+  address_checker_check(content, address_found_cb, address_not_found_cb);
+}
+
+// --- Mnemonic handler ---
+
+static void mnemonic_confirm_cb(bool confirmed, void *user_data) {
+  (void)user_data;
+
+  if (!confirmed || !scanned_mnemonic) {
+    SECURE_FREE_STRING(scanned_mnemonic);
+    if (return_callback)
+      return_callback();
+    return;
+  }
+
+  wallet_network_t net = wallet_get_network();
+
+  // Unload current state
+  wallet_unload();
+
+  // Load new mnemonic (no passphrase, will use current network)
+  if (!key_load_from_mnemonic(scanned_mnemonic, NULL,
+                              net == WALLET_NETWORK_TESTNET)) {
+    SECURE_FREE_STRING(scanned_mnemonic);
+    dialog_show_error("Failed to load mnemonic", return_callback, 0);
+    return;
+  }
+
+  if (!wallet_init(net)) {
+    SECURE_FREE_STRING(scanned_mnemonic);
+    dialog_show_error("Failed to initialize wallet", return_callback, 0);
+    return;
+  }
+
+  SECURE_FREE_STRING(scanned_mnemonic);
+
+  // Return to home — it will recreate with new key info
+  if (return_callback)
+    return_callback();
+}
+
+static void handle_mnemonic_content(const char *data, size_t len) {
+  char *mnemonic = mnemonic_qr_to_mnemonic(data, len, NULL);
+  if (!mnemonic || bip39_mnemonic_validate(NULL, mnemonic) != WALLY_OK) {
+    SECURE_FREE_STRING(mnemonic);
+    dialog_show_error("Invalid mnemonic", return_callback, 0);
+    return;
+  }
+
+  // Get current fingerprint
+  char current_fp[9] = "????????";
+  key_get_fingerprint_hex(current_fp);
+
+  // Compute new mnemonic's fingerprint without touching the loaded key
+  wallet_network_t net = wallet_get_network();
+  bool is_test = (net == WALLET_NETWORK_TESTNET);
+
+  char new_fp[9] = "????????";
+  {
+    unsigned char seed[BIP39_SEED_LEN_512];
+    size_t seed_len = 0;
+    if (bip39_mnemonic_to_seed(mnemonic, NULL, seed, sizeof(seed), &seed_len) ==
+        WALLY_OK) {
+      uint32_t ver = is_test ? BIP32_VER_TEST_PRIVATE : BIP32_VER_MAIN_PRIVATE;
+      struct ext_key *tmp_key = NULL;
+      if (bip32_key_from_seed_alloc(seed, seed_len, ver, 0, &tmp_key) ==
+          WALLY_OK) {
+        unsigned char fp[BIP32_KEY_FINGERPRINT_LEN];
+        if (bip32_key_get_fingerprint(tmp_key, fp, BIP32_KEY_FINGERPRINT_LEN) ==
+            WALLY_OK) {
+          for (int i = 0; i < BIP32_KEY_FINGERPRINT_LEN; i++)
+            sprintf(new_fp + (i * 2), "%02x", fp[i]);
+          new_fp[BIP32_KEY_FINGERPRINT_LEN * 2] = '\0';
+        }
+        bip32_key_free(tmp_key);
+      }
+      secure_memzero(seed, sizeof(seed));
+    }
+  }
+
+  // Store mnemonic for confirmation callback
+  scanned_mnemonic = mnemonic;
+
+  char msg[256];
+  snprintf(
+      msg, sizeof(msg),
+      "Replace current key?\n\n"
+      "  %s > #%06X %s#\n\n"
+      "Passphrase and descriptor will be discarded.",
+      current_fp,
+      (unsigned)((lv_color_to_32(highlight_color(), LV_OPA_COVER).red << 16) |
+                 (lv_color_to_32(highlight_color(), LV_OPA_COVER).green << 8) |
+                 lv_color_to_32(highlight_color(), LV_OPA_COVER).blue),
+      new_fp);
+
+  dialog_show_confirm(msg, mnemonic_confirm_cb, NULL, DIALOG_STYLE_FULLSCREEN);
+}
+
+// --- PSBT handling (unchanged from sign.c) ---
 
 static bool parse_and_display_psbt(const char *base64_data) {
   if (!base64_data) {
@@ -322,33 +585,26 @@ static void mismatch_dialog_cb(void *user_data) {
   }
 }
 
-// Check for mismatches between PSBT requirements and wallet configuration
-// Returns true if there is a mismatch (and shows dialog), false if OK to
-// proceed
 static bool check_psbt_mismatch(void) {
   if (!current_psbt) {
     return false;
   }
 
-  // Detect PSBT requirements (also sets global is_testnet for later use)
   is_testnet = psbt_detect_network(current_psbt);
   int32_t psbt_account = psbt_detect_account(current_psbt);
 
-  // Get wallet configuration
   wallet_network_t wallet_net = wallet_get_network();
   bool wallet_is_testnet = (wallet_net == WALLET_NETWORK_TESTNET);
   uint32_t wallet_account = wallet_get_account();
 
-  // Check for mismatches
   bool network_mismatch = (is_testnet != wallet_is_testnet);
   bool account_mismatch =
       (psbt_account >= 0 && (uint32_t)psbt_account != wallet_account);
 
   if (!network_mismatch && !account_mismatch) {
-    return false; // No mismatch, proceed
+    return false;
   }
 
-  // Build mismatch message
   char message[256];
   int offset = 0;
   offset += snprintf(
@@ -371,7 +627,6 @@ static bool check_psbt_mismatch(void) {
            "\nGo to Settings " LV_SYMBOL_SETTINGS
            " to update\nconfiguration before signing.");
 
-  // Show mismatch dialog
   dialog_show_info("Configuration Mismatch", message, mismatch_dialog_cb, NULL,
                    DIALOG_STYLE_FULLSCREEN);
 
@@ -379,13 +634,12 @@ static bool check_psbt_mismatch(void) {
 }
 
 static bool create_psbt_info_display(void) {
-  if (!sign_screen || !current_psbt || !wallet_is_initialized()) {
+  if (!scan_screen || !current_psbt || !wallet_is_initialized()) {
     return false;
   }
 
-  // Check for configuration mismatches before displaying (also sets is_testnet)
   if (check_psbt_mismatch()) {
-    return true; // Mismatch dialog shown, don't proceed with display
+    return true;
   }
 
   size_t num_inputs = 0;
@@ -400,7 +654,6 @@ static bool create_psbt_info_display(void) {
     return false;
   }
 
-  // Collect input amounts
   uint64_t *input_amounts = malloc(num_inputs * sizeof(uint64_t));
   if (!input_amounts) {
     return false;
@@ -411,7 +664,6 @@ static bool create_psbt_info_display(void) {
     total_input_value += input_amounts[i];
   }
 
-  // Get global transaction for outputs
   struct wally_tx *global_tx = NULL;
   int tx_ret = wally_psbt_get_global_tx_alloc(current_psbt, &global_tx);
   if (tx_ret != WALLY_OK || !global_tx) {
@@ -419,7 +671,6 @@ static bool create_psbt_info_display(void) {
     return false;
   }
 
-  // Classify outputs and collect data for diagram
   classified_output_t *classified_outputs =
       calloc(num_outputs, sizeof(classified_output_t));
   if (!classified_outputs) {
@@ -428,7 +679,6 @@ static bool create_psbt_info_display(void) {
     return false;
   }
 
-  // Calculate total output value and fee early for diagram
   uint64_t total_output_value = 0;
   for (size_t i = 0; i < num_outputs; i++) {
     total_output_value += global_tx->outputs[i].satoshi;
@@ -437,7 +687,6 @@ static bool create_psbt_info_display(void) {
                      ? (total_input_value - total_output_value)
                      : 0;
 
-  // Allocate for outputs + fee (if non-zero)
   size_t diagram_output_count = num_outputs + (fee > 0 ? 1 : 0);
   uint64_t *output_amounts = malloc(diagram_output_count * sizeof(uint64_t));
   lv_color_t *output_colors = malloc(diagram_output_count * sizeof(lv_color_t));
@@ -450,7 +699,6 @@ static bool create_psbt_info_display(void) {
     return false;
   }
 
-  // First pass: classify all outputs
   for (size_t i = 0; i < num_outputs; i++) {
     classified_outputs[i].index = i;
     classified_outputs[i].value = global_tx->outputs[i].satoshi;
@@ -462,10 +710,8 @@ static bool create_psbt_info_display(void) {
                         &classified_outputs[i].address_index);
   }
 
-  // Build diagram arrays in display order: self-transfer, change, spend, fee
   size_t diagram_idx = 0;
 
-  // Self-transfers first (cyan)
   for (size_t i = 0; i < num_outputs; i++) {
     if (classified_outputs[i].type == OUTPUT_TYPE_SELF_TRANSFER) {
       output_amounts[diagram_idx] = classified_outputs[i].value;
@@ -474,7 +720,6 @@ static bool create_psbt_info_display(void) {
     }
   }
 
-  // Change second (green)
   for (size_t i = 0; i < num_outputs; i++) {
     if (classified_outputs[i].type == OUTPUT_TYPE_CHANGE) {
       output_amounts[diagram_idx] = classified_outputs[i].value;
@@ -483,7 +728,6 @@ static bool create_psbt_info_display(void) {
     }
   }
 
-  // Spending third (orange)
   for (size_t i = 0; i < num_outputs; i++) {
     if (classified_outputs[i].type == OUTPUT_TYPE_SPEND) {
       output_amounts[diagram_idx] = classified_outputs[i].value;
@@ -492,13 +736,12 @@ static bool create_psbt_info_display(void) {
     }
   }
 
-  // Fee last (red)
   if (fee > 0) {
     output_amounts[diagram_idx] = fee;
     output_colors[diagram_idx] = error_color();
   }
 
-  psbt_info_container = lv_obj_create(sign_screen);
+  psbt_info_container = lv_obj_create(scan_screen);
   lv_obj_set_size(psbt_info_container, LV_PCT(100), LV_PCT(100));
   lv_obj_set_flex_flow(psbt_info_container, LV_FLEX_FLOW_COLUMN);
   lv_obj_set_flex_align(psbt_info_container, LV_FLEX_ALIGN_START,
@@ -508,9 +751,8 @@ static bool create_psbt_info_display(void) {
   theme_apply_screen(psbt_info_container);
   lv_obj_add_flag(psbt_info_container, LV_OBJ_FLAG_SCROLLABLE);
 
-  // Create Sankey diagram
   lv_obj_update_layout(psbt_info_container);
-  int32_t diagram_width = lv_obj_get_width(sign_screen) - 20;
+  int32_t diagram_width = lv_obj_get_width(scan_screen) - 20;
   tx_diagram = sankey_diagram_create(psbt_info_container, diagram_width, 160);
   if (tx_diagram) {
     sankey_diagram_set_inputs(tx_diagram, input_amounts, num_inputs);
@@ -519,7 +761,6 @@ static bool create_psbt_info_display(void) {
     sankey_diagram_render(tx_diagram);
   }
 
-  // Add overflow indicators below diagram if flows were omitted
   size_t input_overflow = sankey_diagram_get_input_overflow(tx_diagram);
   size_t output_overflow = sankey_diagram_get_output_overflow(tx_diagram);
 
@@ -559,7 +800,6 @@ static bool create_psbt_info_display(void) {
   free(output_amounts);
   free(output_colors);
 
-  // Inputs section (white to match diagram input lines)
   char prefix_text[64];
   snprintf(prefix_text, sizeof(prefix_text), "Inputs(%zu): ", num_inputs);
   lv_obj_t *inputs_row = create_btc_value_row(psbt_info_container, prefix_text,
@@ -602,7 +842,6 @@ static bool create_psbt_info_display(void) {
     }
   }
 
-  // Display change
   bool has_change = false;
   for (size_t i = 0; i < num_outputs; i++) {
     if (classified_outputs[i].type == OUTPUT_TYPE_CHANGE) {
@@ -634,7 +873,6 @@ static bool create_psbt_info_display(void) {
     }
   }
 
-  // Display spends
   bool has_spends = false;
   for (size_t i = 0; i < num_outputs; i++) {
     if (classified_outputs[i].type == OUTPUT_TYPE_SPEND) {
@@ -682,7 +920,6 @@ static bool create_psbt_info_display(void) {
     global_tx = NULL;
   }
 
-  // Fee section (red to match diagram)
   if (fee > 0) {
     lv_obj_t *separator2 = lv_obj_create(psbt_info_container);
     lv_obj_set_size(separator2, LV_PCT(100), 2);
@@ -774,8 +1011,8 @@ static void sign_button_cb(lv_event_t *e) {
     return;
   }
 
-  sign_page_hide();
-  sign_page_destroy();
+  scan_page_hide();
+  scan_page_destroy();
 
   qr_viewer_page_show();
 }
@@ -907,7 +1144,7 @@ static void load_desc_source_back_cb(void) {
 
 static void load_descriptor_menu_cb(void) {
   descriptor_loader_show_source_menu(
-      sign_screen, load_desc_from_qr_cb, load_desc_from_flash_cb,
+      scan_screen, load_desc_from_qr_cb, load_desc_from_flash_cb,
       load_desc_from_sd_cb, load_desc_source_back_cb);
 }
 
@@ -923,11 +1160,11 @@ static void sign_without_verification_cb(void) {
 }
 
 static void show_multisig_options_menu(void) {
-  if (!sign_screen) {
+  if (!scan_screen) {
     return;
   }
 
-  multisig_menu = ui_menu_create(sign_screen, "Multisig PSBT Detected",
+  multisig_menu = ui_menu_create(scan_screen, "Multisig PSBT Detected",
                                  multisig_menu_back_cb);
   if (!multisig_menu) {
     dialog_show_error("Failed to create menu", return_callback, 0);
@@ -941,7 +1178,7 @@ static void show_multisig_options_menu(void) {
 }
 
 static void create_message_sign_display(void) {
-  if (!sign_screen) {
+  if (!scan_screen) {
     return;
   }
 
@@ -955,7 +1192,7 @@ static void create_message_sign_display(void) {
     return;
   }
 
-  psbt_info_container = lv_obj_create(sign_screen);
+  psbt_info_container = lv_obj_create(scan_screen);
   lv_obj_set_size(psbt_info_container, LV_PCT(100), LV_PCT(100));
   lv_obj_set_flex_flow(psbt_info_container, LV_FLEX_FLOW_COLUMN);
   lv_obj_set_flex_align(psbt_info_container, LV_FLEX_ALIGN_START,
@@ -965,10 +1202,8 @@ static void create_message_sign_display(void) {
   theme_apply_screen(psbt_info_container);
   lv_obj_add_flag(psbt_info_container, LV_OBJ_FLAG_SCROLLABLE);
 
-  // Title
   theme_create_page_title(psbt_info_container, "Sign Message");
 
-  // Derivation path
   lv_obj_t *path_title =
       theme_create_label(psbt_info_container, "Path:", false);
   theme_apply_label(path_title, true);
@@ -978,7 +1213,6 @@ static void create_message_sign_display(void) {
       psbt_info_container, current_message.derivation_path, false);
   lv_obj_set_width(path_label, LV_PCT(100));
 
-  // Address
   lv_obj_t *addr_title =
       theme_create_label(psbt_info_container, "Address:", false);
   theme_apply_label(addr_title, true);
@@ -991,14 +1225,12 @@ static void create_message_sign_display(void) {
 
   wally_free_string(address);
 
-  // Separator
   lv_obj_t *separator = lv_obj_create(psbt_info_container);
   lv_obj_set_size(separator, LV_PCT(100), 2);
   lv_obj_set_style_bg_color(separator, main_color(), 0);
   lv_obj_set_style_bg_opa(separator, LV_OPA_COVER, 0);
   lv_obj_set_style_border_width(separator, 0, 0);
 
-  // Message
   lv_obj_t *msg_title =
       theme_create_label(psbt_info_container, "Message:", false);
   theme_apply_label(msg_title, true);
@@ -1009,7 +1241,6 @@ static void create_message_sign_display(void) {
   lv_obj_set_width(msg_label, LV_PCT(100));
   lv_label_set_long_mode(msg_label, LV_LABEL_LONG_WRAP);
 
-  // Buttons
   lv_obj_t *button_container = lv_obj_create(psbt_info_container);
   lv_obj_set_size(button_container, LV_PCT(100), LV_SIZE_CONTENT);
   lv_obj_set_flex_flow(button_container, LV_FLEX_FLOW_ROW);
@@ -1035,7 +1266,7 @@ static void create_message_sign_display(void) {
   lv_obj_set_size(sign_button, LV_PCT(45), LV_SIZE_CONTENT);
   theme_apply_touch_button(sign_button, false);
   lv_obj_add_event_cb(sign_button, message_sign_button_cb, LV_EVENT_CLICKED,
-                       NULL);
+                      NULL);
   lv_obj_clear_flag(sign_button, LV_OBJ_FLAG_EVENT_BUBBLE);
 
   lv_obj_t *sign_label = lv_label_create(sign_button);
@@ -1055,45 +1286,48 @@ static void message_sign_button_cb(lv_event_t *e) {
   saved_return_callback = return_callback;
 
   qr_viewer_page_create(lv_screen_active(), sig_b64, "Message Signature",
-                         return_from_qr_viewer_cb);
+                        return_from_qr_viewer_cb);
   wally_free_string(sig_b64);
 
-  sign_page_hide();
-  sign_page_destroy();
+  scan_page_hide();
+  scan_page_destroy();
 
   qr_viewer_page_show();
 }
 
-void sign_page_create(lv_obj_t *parent, void (*return_cb)(void)) {
+void scan_page_create(lv_obj_t *parent, void (*return_cb)(void)) {
   if (!parent || !key_is_loaded()) {
     return;
   }
 
   return_callback = return_cb;
 
-  sign_screen = theme_create_page_container(parent);
+  scan_screen = theme_create_page_container(parent);
   qr_scanner_page_create(NULL, return_from_qr_scanner_cb);
   qr_scanner_page_show();
 }
 
-void sign_page_show(void) {
-  if (sign_screen) {
-    lv_obj_clear_flag(sign_screen, LV_OBJ_FLAG_HIDDEN);
+void scan_page_show(void) {
+  if (scan_screen) {
+    lv_obj_clear_flag(scan_screen, LV_OBJ_FLAG_HIDDEN);
   }
 }
 
-void sign_page_hide(void) {
-  if (sign_screen) {
-    lv_obj_add_flag(sign_screen, LV_OBJ_FLAG_HIDDEN);
+void scan_page_hide(void) {
+  if (scan_screen) {
+    lv_obj_add_flag(scan_screen, LV_OBJ_FLAG_HIDDEN);
   }
 }
 
-void sign_page_destroy(void) {
+void scan_page_destroy(void) {
   qr_scanner_page_destroy();
   load_descriptor_storage_page_destroy();
   descriptor_loader_destroy_source_menu();
+  address_checker_destroy();
 
   cleanup_psbt_data();
+
+  SECURE_FREE_STRING(scanned_mnemonic);
 
   if (multisig_menu) {
     ui_menu_destroy(multisig_menu);
@@ -1107,9 +1341,9 @@ void sign_page_destroy(void) {
 
   psbt_info_container = NULL;
 
-  if (sign_screen) {
-    lv_obj_del(sign_screen);
-    sign_screen = NULL;
+  if (scan_screen) {
+    lv_obj_del(scan_screen);
+    scan_screen = NULL;
   }
 
   return_callback = NULL;

@@ -1,0 +1,28 @@
+#ifndef SCAN_H
+#define SCAN_H
+
+#include <lvgl.h>
+
+/**
+ * Create the scan page — universal QR content detection
+ * @param parent Parent LVGL object
+ * @param return_cb Callback function to call when returning to home
+ */
+void scan_page_create(lv_obj_t *parent, void (*return_cb)(void));
+
+/**
+ * Show the scan page
+ */
+void scan_page_show(void);
+
+/**
+ * Hide the scan page
+ */
+void scan_page_hide(void);
+
+/**
+ * Destroy the scan page and free resources
+ */
+void scan_page_destroy(void);
+
+#endif // SCAN_H

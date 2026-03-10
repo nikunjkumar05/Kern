@@ -11,6 +11,7 @@
 #include "../../ui/theme.h"
 #include "../load_descriptor_storage.h"
 #include "../settings/wallet_settings.h"
+#include "../shared/address_checker.h"
 #include "../shared/descriptor_loader.h"
 #include <lvgl.h>
 #include <stdint.h>
@@ -42,14 +43,10 @@ static uint32_t stored_indices[NUM_ADDRESSES];
 static int stored_count = 0;
 
 static lv_obj_t *scan_button = NULL;
-static char *scanned_address = NULL;
-static uint32_t scan_search_start = 0;
-static uint32_t scan_search_limit = 50;
 
 static void refresh_address_list(void);
 static void scan_button_cb(lv_event_t *e);
 static void return_from_scan_cb(void);
-static void perform_address_sweep(void);
 
 // Format address as 4-char blocks with alternating main/highlight colors
 static void format_address_colored_blocks(char *dest, size_t dest_size,
@@ -397,85 +394,14 @@ static lv_obj_t *create_nav_button(lv_obj_t *parent, const char *text,
 
 // --- Scan address flow ---
 
-static void scan_found_cb(void *user_data) {
-  (void)user_data;
-  free(scanned_address);
-  scanned_address = NULL;
+static void scan_found_cb(void) {
+  address_checker_destroy();
   addresses_page_show();
 }
 
-static void scan_not_found_cb(bool confirmed, void *user_data) {
-  (void)user_data;
-  if (confirmed) {
-    scan_search_start = scan_search_limit;
-    scan_search_limit += 50;
-    perform_address_sweep();
-    return;
-  }
-  free(scanned_address);
-  scanned_address = NULL;
+static void scan_not_found_cb(void) {
+  address_checker_destroy();
   addresses_page_show();
-}
-
-static void perform_address_sweep(void) {
-  wallet_policy_t policy = wallet_get_policy();
-
-  // Search receive addresses
-  for (uint32_t i = scan_search_start; i < scan_search_limit; i++) {
-    char *address = NULL;
-    bool success;
-
-    if (policy == WALLET_POLICY_MULTISIG)
-      success = wallet_get_multisig_receive_address(i, &address);
-    else
-      success = wallet_get_receive_address(i, &address);
-
-    if (!success || !address)
-      continue;
-
-    if (strcasecmp(address, scanned_address) == 0) {
-      wally_free_string(address);
-      char msg[64];
-      snprintf(msg, sizeof(msg), "Receive #%u", i);
-      dialog_show_info("Address Verified", msg, scan_found_cb, NULL,
-                       DIALOG_STYLE_FULLSCREEN);
-      return;
-    }
-    wally_free_string(address);
-  }
-
-  // Search change addresses
-  for (uint32_t i = scan_search_start; i < scan_search_limit; i++) {
-    char *address = NULL;
-    bool success;
-
-    if (policy == WALLET_POLICY_MULTISIG)
-      success = wallet_get_multisig_change_address(i, &address);
-    else
-      success = wallet_get_change_address(i, &address);
-
-    if (!success || !address)
-      continue;
-
-    if (strcasecmp(address, scanned_address) == 0) {
-      wally_free_string(address);
-      char msg[64];
-      snprintf(msg, sizeof(msg), "Change #%u", i);
-      dialog_show_info("Address Verified", msg, scan_found_cb, NULL,
-                       DIALOG_STYLE_FULLSCREEN);
-      return;
-    }
-    wally_free_string(address);
-  }
-
-  // Not found
-  char msg[192];
-  snprintf(msg, sizeof(msg),
-           "Address not found in first %u addresses.\n\n"
-           "(Check if loaded wallet settings match coordinator's)\n\n"
-           "Search 50 more?",
-           scan_search_limit);
-  dialog_show_confirm(msg, scan_not_found_cb, NULL, DIALOG_STYLE_FULLSCREEN);
 }
 
 static void return_from_scan_cb(void) {
@@ -487,41 +413,8 @@ static void return_from_scan_cb(void) {
     return;
   }
 
-  // Strip BIP21 "bitcoin:" URI prefix if present
-  if (strncasecmp(content, "bitcoin:", 8) == 0) {
-    char *query = strchr(content + 8, '?');
-    size_t addr_len =
-        query ? (size_t)(query - content - 8) : strlen(content + 8);
-    memmove(content, content + 8, addr_len);
-    content[addr_len] = '\0';
-  }
-
-  // Validate address using libwally
-  const char *hrp =
-      (wallet_get_network() == WALLET_NETWORK_MAINNET) ? "bc" : "tb";
-  uint32_t wally_net = (wallet_get_network() == WALLET_NETWORK_MAINNET)
-                           ? WALLY_NETWORK_BITCOIN_MAINNET
-                           : WALLY_NETWORK_BITCOIN_TESTNET;
-  unsigned char script[128];
-  size_t written = 0;
-  bool valid =
-      (wally_addr_segwit_to_bytes(content, hrp, 0, script, sizeof(script),
-                                  &written) == WALLY_OK) ||
-      (wally_address_to_scriptpubkey(content, wally_net, script, sizeof(script),
-                                     &written) == WALLY_OK);
-  if (!valid) {
-    free(content);
-    dialog_show_error("Invalid address", NULL, 0);
-    addresses_page_show();
-    return;
-  }
-
-  if (scanned_address)
-    free(scanned_address);
-  scanned_address = content;
-  scan_search_start = 0;
-  scan_search_limit = 50;
-  perform_address_sweep();
+  address_checker_check(content, scan_found_cb, scan_not_found_cb);
+  free(content);
 }
 
 static void scan_button_cb(lv_event_t *e) {
@@ -662,10 +555,5 @@ void addresses_page_destroy(void) {
   show_change = false;
   address_offset = 0;
   stored_count = 0;
-  if (scanned_address) {
-    free(scanned_address);
-    scanned_address = NULL;
-  }
-  scan_search_start = 0;
-  scan_search_limit = 50;
+  address_checker_destroy();
 }
