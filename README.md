@@ -113,78 +113,17 @@ esptool --chip esp32p4 --baud 460800 write-flash 0x0 kern-<version>.bin
 >   0x10000 firmware.bin
 > ```
 
-# References
+## References
+
 Kern is strongly inspired by [Krux](https://github.com/selfcustody/krux), sharing similar but simplified UI elements and flow.
 
 [Blockstream Jade](https://github.com/Blockstream/Jade) was a strong inspiration for the decision to use C language for efficient use of the hardware. Additionally, Kern's core library, [libwally](https://github.com/ElementsProject/libwally-core/), is shared with Jade.
 
 The simplicity and UI polish of [SeedSigner](https://github.com/SeedSigner/seedsigner) and the security focus of the pioneering [Specter-DIY](https://github.com/cryptoadvance/specter-diy) were also strong inspirations.
 
-## Roadmap
+## [Roadmap](ROADMAP.md)
 
-- ✅ Basic UI
-- ✅ Camera video pipeline
-- ✅ Static QR codes
-  - ✅ Scan
-  - ✅ Display
-- Animated QR Codes
-  - Scan, parse and export
-    - ✅ UR
-    - ✅ pMofN
-    - ✅ BBQr
-- New Mnemonic
-  - ✅ From dice rolls
-  - ✅ From words
-  - ✅ From camera
-- Load Mnemonic
-  - ✅ From manual input (typing words)
-  - From QR codes
-    - ✅ Plain
-    - ✅ SeedQR
-    - ✅ Compact SeedQR
-  - Encrypted
-   - ✅Flash
-   - ✅SD Card
-- Back up
-  - ✅ Words
-  - ✅ QR codes
-  - ❌ Binary Grids
-  - ✅ Encrypted
-- ✅ Passphrases
-- Networks
-  - ✅ Mainnet
-  - ✅ Testnet
-- ✅ Account
-- Policy types
-  - ✅ Single-sig
-  - ✅ Multisig
-  - ❌ Miniscript
-- Descriptors
-  - ✅ Loading
-  - ✅ Exporting
-  - ✅ Saving
-  - ✅ Encrypting/Decrypting
-- Script type
-  - ✅ Native Segwit
-  - ❌ Nested Segwit
-  - ❌ Taproot
-
-- Security
-  - ✅ KEF encryption
-  - ✅ PIN
-  - ❌ OTP based secure boot
-  - ❌ Flash/RAM encryption
-  - ❌ Option to disable USB-serial and JTAG
-
-- Easy Installer
-  - ❌ Flasher
-  - ❌ Secure boot activation
-  - ❌ Flash/RAM encryption activation
-
-- Reliability
-  - ❌ Auto tests
-
-- ❌ User's documentation
+## [Contributing](CONTRIBUTING.md)
 
 ## License
 

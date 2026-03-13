@@ -1,0 +1,65 @@
+# Roadmap
+
+- ✅ Basic UI
+- ✅ Camera video pipeline
+- ✅ Static QR codes
+  - ✅ Scan
+  - ✅ Display
+- Animated QR Codes
+  - Scan, parse and export
+    - ✅ UR
+    - ✅ pMofN
+    - ✅ BBQr
+- New Mnemonic
+  - ✅ From dice rolls
+  - ✅ From words
+  - ✅ From camera
+- Load Mnemonic
+  - ✅ From manual input (typing words)
+  - From QR codes
+    - ✅ Plain
+    - ✅ SeedQR
+    - ✅ Compact SeedQR
+  - Encrypted
+    - ✅ Flash
+    - ✅ SD Card
+- Back up
+  - ✅ Words
+  - ✅ QR codes
+  - ❌ Binary Grids
+  - ✅ Encrypted
+- ✅ Passphrases
+- Networks
+  - ✅ Mainnet
+  - ✅ Testnet
+- ✅ Account
+- Policy types
+  - ✅ Single-sig
+  - ✅ Multisig
+  - ❌ Miniscript
+- Descriptors
+  - ✅ Loading
+  - ✅ Exporting
+  - ✅ Saving
+  - ✅ Encrypting/Decrypting
+- Script type
+  - ✅ Native Segwit
+  - ❌ Nested Segwit
+  - ❌ Taproot
+
+- Security
+  - ✅ KEF encryption
+  - ✅ PIN
+  - ❌ OTP based secure boot
+  - ❌ Flash/RAM encryption
+  - ❌ Option to disable USB-serial and JTAG
+
+- Easy Installer
+  - ❌ Flasher
+  - ❌ Secure boot activation
+  - ❌ Flash/RAM encryption activation
+
+- Reliability
+  - ❌ Auto tests
+
+- ❌ User's documentation
