@@ -195,16 +195,16 @@ Some features only reach their full security guarantee when combined with later 
 - Keep development builds unsigned (separate sdkconfig)
 - Anti-rollback counter enabled — firmware includes monotonic security version
 
-### Phase 4 — Partition Table & Air-Gapped SD Card Updates
+### Phase 4 — Air-Gapped SD Card Updates
 
 **Critical**: Must complete and validate before Phase 5 release mode, which permanently disables serial flashing.
 
-#### 4a. Partition table redesign
-- Switch to factory + dual OTA layout (see Partition Table section above)
-- Add `otadata` partition for OTA slot tracking
-- Keep `factory` partition as known-good fallback
-- Validate: app partitions 64KB-aligned, offsets contiguous, total fits 32MB flash
-- **Migration**: SPIFFS `storage` moves to a new offset and shrinks (7M → ~3.9M) — existing data is lost. Users re-import KEF-encrypted mnemonics/descriptors from SD card or QR backups. NVS is unaffected (same offset/size).
+#### 4a. Partition table redesign ✅
+- Factory + dual OTA layout implemented (see Partition Table section above)
+- `otadata` partition added for OTA slot tracking
+- `factory` partition as known-good fallback
+- App partitions 64KB-aligned, offsets contiguous, total fits 16MB flash
+- **Migration**: SPIFFS `storage` moved to new offset and shrunk (7M → ~3.9M) — existing data is lost. Users re-import KEF-encrypted mnemonics/descriptors from SD card or QR backups. NVS is unaffected (same offset/size).
 
 #### 4b. SD card firmware update page
 - Settings → Firmware Update → browse SD card for signed `.bin` files
