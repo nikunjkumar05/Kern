@@ -12,7 +12,7 @@ An OV5647 camera module is also required.
 
 ## Prerequisites
 
-- [esp-idf v5.5.3](https://docs.espressif.com/projects/esp-idf/en/v5.5.3/esp32p4/get-started/index.html)
+- [esp-idf v6.0](https://docs.espressif.com/projects/esp-idf/en/v6.0/esp32p4/get-started/index.html)
 
 ## Build
 
@@ -110,7 +110,7 @@ esptool --chip esp32p4 --baud 460800 write-flash 0x0 kern-<version>.bin
 > esptool --chip esp32p4 --baud 460800 write-flash \
 >   0x2000 bootloader.bin \
 >   0x8000 partition-table.bin \
->   0x10000 firmware.bin
+>   0x20000 firmware.bin
 > ```
 
 ## References
