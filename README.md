@@ -66,6 +66,17 @@ just flash   # Flash to device
 just clean   # Clean build artifacts
 ```
 
+### Full Clean
+
+After updating ESP-IDF or switching branches with significant build changes, do a full clean to avoid stale artifacts:
+
+```bash
+idf.py fullclean
+rm sdkconfig
+idf.py set-target esp32p4
+idf.py build
+```
+
 ### Build Options
 
 #### Enable/disable Auto-focus
@@ -117,7 +128,7 @@ esptool --chip esp32p4 --baud 460800 write-flash 0x0 kern-<version>.bin
 
 Kern is strongly inspired by [Krux](https://github.com/selfcustody/krux), sharing similar but simplified UI elements and flow.
 
-[Blockstream Jade](https://github.com/Blockstream/Jade) was a strong inspiration for the decision to use C language for efficient use of the hardware. Additionally, Kern's core library, [libwally](https://github.com/ElementsProject/libwally-core/), is shared with Jade.
+[Blockstream Jade](https://github.com/Blockstream/Jade) was a strong inspiration for the decision to use C language for efficient use of the hardware. Additionally, Kern uses the same core library Jade does, [libwally](https://github.com/ElementsProject/libwally-core/), is shared with Jade.
 
 The simplicity and UI polish of [SeedSigner](https://github.com/SeedSigner/seedsigner) and the security focus of the pioneering [Specter-DIY](https://github.com/cryptoadvance/specter-diy) were also strong inspirations.
 
