@@ -5,6 +5,7 @@
 #include "../ui/theme.h"
 #include "../utils/memory_utils.h"
 #include "parser.h"
+#include <driver/ppa.h>
 #include <esp_lcd_touch_gt911.h>
 #include <esp_log.h>
 #include <freertos/FreeRTOS.h>
@@ -13,7 +14,6 @@
 #include <freertos/task.h>
 #include <k_quirc.h>
 #include <lvgl.h>
-#include <driver/ppa.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -610,18 +610,18 @@ static bool qr_decoder_init(uint32_t width, uint32_t height) {
     qr_ppa_buffer_size =
         (qr_ppa_buffer_size + CONFIG_CACHE_L2_CACHE_LINE_SIZE - 1) &
         ~(CONFIG_CACHE_L2_CACHE_LINE_SIZE - 1);
-    qr_ppa_buffer = heap_caps_aligned_calloc(
-        CONFIG_CACHE_L2_CACHE_LINE_SIZE, qr_ppa_buffer_size, 1,
-        MALLOC_CAP_SPIRAM);
+    qr_ppa_buffer =
+        heap_caps_aligned_calloc(CONFIG_CACHE_L2_CACHE_LINE_SIZE,
+                                 qr_ppa_buffer_size, 1, MALLOC_CAP_SPIRAM);
     if (!qr_ppa_buffer) {
       ESP_LOGW(TAG, "Failed to allocate QR PPA buffer, using software "
-                     "downsampling");
+                    "downsampling");
       ppa_unregister_client(qr_ppa_client);
       qr_ppa_client = NULL;
     }
   } else {
     ESP_LOGW(TAG, "Failed to register QR PPA client, using software "
-                   "downsampling");
+                  "downsampling");
   }
 
   qr_parser = qr_parser_create();
@@ -885,17 +885,16 @@ static void camera_init(void) {
 
     ppa_client_config_t ppa_cfg = {.oper_type = PPA_OPERATION_SRM};
     if (ppa_register_client(&ppa_cfg, &cam_ppa_client) == ESP_OK) {
-      cam_ppa_buffer_size =
-          CAMERA_SCREEN_WIDTH * CAMERA_SCREEN_HEIGHT * 2;
+      cam_ppa_buffer_size = CAMERA_SCREEN_WIDTH * CAMERA_SCREEN_HEIGHT * 2;
       cam_ppa_buffer_size =
           (cam_ppa_buffer_size + CONFIG_CACHE_L2_CACHE_LINE_SIZE - 1) &
           ~(CONFIG_CACHE_L2_CACHE_LINE_SIZE - 1);
-      cam_ppa_buffer = heap_caps_aligned_calloc(
-          CONFIG_CACHE_L2_CACHE_LINE_SIZE, cam_ppa_buffer_size, 1,
-          MALLOC_CAP_SPIRAM);
+      cam_ppa_buffer =
+          heap_caps_aligned_calloc(CONFIG_CACHE_L2_CACHE_LINE_SIZE,
+                                   cam_ppa_buffer_size, 1, MALLOC_CAP_SPIRAM);
       if (!cam_ppa_buffer) {
         ESP_LOGW(TAG, "Failed to allocate PPA buffer, camera won't "
-                       "counter-rotate");
+                      "counter-rotate");
         ppa_unregister_client(cam_ppa_client);
         cam_ppa_client = NULL;
       }

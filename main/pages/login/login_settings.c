@@ -191,8 +191,8 @@ static void show_rotation_page(void) {
   ui_create_back_button(rotation_screen, rotation_back_cb);
   theme_create_page_title(rotation_screen, "Screen Rotation");
 
-  rotation_dropdown =
-      theme_create_dropdown(rotation_screen, "0\xC2\xB0\n90\xC2\xB0\n180\xC2\xB0\n270\xC2\xB0");
+  rotation_dropdown = theme_create_dropdown(
+      rotation_screen, "0\xC2\xB0\n90\xC2\xB0\n180\xC2\xB0\n270\xC2\xB0");
   lv_dropdown_set_selected(rotation_dropdown, settings_get_rotation());
   lv_obj_set_width(rotation_dropdown, LV_HOR_RES * 35 / 100);
   lv_obj_align(rotation_dropdown, LV_ALIGN_CENTER, 0, 0);

@@ -271,9 +271,9 @@ static bool camera_init(void) {
       cam_ppa_buffer_size =
           (cam_ppa_buffer_size + CONFIG_CACHE_L2_CACHE_LINE_SIZE - 1) &
           ~(CONFIG_CACHE_L2_CACHE_LINE_SIZE - 1);
-      cam_ppa_buffer = heap_caps_aligned_calloc(
-          CONFIG_CACHE_L2_CACHE_LINE_SIZE, cam_ppa_buffer_size, 1,
-          MALLOC_CAP_SPIRAM);
+      cam_ppa_buffer =
+          heap_caps_aligned_calloc(CONFIG_CACHE_L2_CACHE_LINE_SIZE,
+                                   cam_ppa_buffer_size, 1, MALLOC_CAP_SPIRAM);
       if (!cam_ppa_buffer) {
         ppa_unregister_client(cam_ppa_client);
         cam_ppa_client = NULL;
