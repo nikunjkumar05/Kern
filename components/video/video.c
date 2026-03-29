@@ -8,13 +8,15 @@
 #include "esp_err.h"
 #include "esp_log.h"
 #include "esp_video_init.h"
+#include "esp_video_isp_ioctl.h"
 #include "video.h"
 
 static const char *TAG = "video";
 
 #define MAX_BUFFER_COUNT 6
 #define MIN_BUFFER_COUNT 2
-#define VIDEO_TASK_STACK_SIZE (4 * 1024)
+// 8KB needed: motor driver init (DW9714) deepens SCCB/I2C call stack
+#define VIDEO_TASK_STACK_SIZE (8 * 1024)
 #define VIDEO_TASK_PRIORITY 3
 
 typedef enum {
@@ -45,7 +47,6 @@ static const esp_video_init_csi_config_t s_csi_config = {
     .pwdn_pin = -1,
 };
 
-#if CONFIG_CAM_MOTOR_DW9714
 static const esp_video_init_cam_motor_config_t s_cam_motor_config = {
     .sccb_config = {.init_sccb = true,
                     .i2c_config = {.port = 0,
@@ -56,13 +57,10 @@ static const esp_video_init_cam_motor_config_t s_cam_motor_config = {
     .pwdn_pin = -1,
     .signal_pin = -1,
 };
-#endif
 
 static const esp_video_init_config_t s_cam_config = {
     .csi = &s_csi_config,
-#if CONFIG_CAM_MOTOR_DW9714
     .cam_motor = &s_cam_motor_config,
-#endif
 };
 
 static app_video_t app_video = {.video_fd = -1};
@@ -83,21 +81,17 @@ esp_err_t app_video_main(i2c_master_bus_handle_t i2c_bus_handle) {
   if (i2c_bus_handle) {
     static esp_video_init_csi_config_t csi_config;
     static esp_video_init_config_t cam_config;
-#if CONFIG_CAM_MOTOR_DW9714
     static esp_video_init_cam_motor_config_t cam_motor_config;
     cam_motor_config = s_cam_motor_config;
     cam_motor_config.sccb_config.init_sccb = false;
     cam_motor_config.sccb_config.i2c_handle = i2c_bus_handle;
-#endif
     csi_config = s_csi_config;
     csi_config.sccb_config.init_sccb = false;
     csi_config.sccb_config.i2c_handle = i2c_bus_handle;
 
     cam_config = (esp_video_init_config_t){
         .csi = &csi_config,
-#if CONFIG_CAM_MOTOR_DW9714
         .cam_motor = &cam_motor_config,
-#endif
     };
     ret = esp_video_init(&cam_config);
   } else {
@@ -431,6 +425,66 @@ esp_err_t app_video_close(int fd) {
   app_video.video_fd = -1;
 
   return ret;
+}
+
+esp_err_t app_video_set_ae_target(int fd, uint32_t level) {
+  struct v4l2_ext_controls controls = {.ctrl_class = V4L2_CTRL_CLASS_USER,
+                                       .count = 1};
+  struct v4l2_ext_control control = {.id = V4L2_CID_EXPOSURE, .value = level};
+  controls.controls = &control;
+  if (ioctl(fd, VIDIOC_S_EXT_CTRLS, &controls)) {
+    ESP_LOGW(TAG, "Set AE target level failed");
+    return ESP_FAIL;
+  }
+  return ESP_OK;
+}
+
+esp_err_t app_video_set_focus(int fd, uint32_t position) {
+  struct v4l2_ext_controls controls = {.ctrl_class = V4L2_CTRL_CLASS_CAMERA,
+                                       .count = 1};
+  struct v4l2_ext_control control = {.id = V4L2_CID_FOCUS_ABSOLUTE,
+                                     .value = position};
+  controls.controls = &control;
+  if (ioctl(fd, VIDIOC_S_EXT_CTRLS, &controls)) {
+    ESP_LOGW(TAG, "Set focus position failed");
+    return ESP_FAIL;
+  }
+  return ESP_OK;
+}
+
+esp_err_t app_video_disable_af(void) {
+  // AF control must go to the ISP device, not the camera sensor device
+  int isp_fd = open(ESP_VIDEO_ISP1_DEVICE_NAME, O_RDWR);
+  if (isp_fd < 0) {
+    ESP_LOGW(TAG, "Failed to open ISP device for AF disable");
+    return ESP_FAIL;
+  }
+
+  esp_video_isp_af_t af_cfg = {.enable = false};
+  struct v4l2_ext_control control = {
+      .id = V4L2_CID_USER_ESP_ISP_AF,
+      .size = sizeof(af_cfg),
+      .p_u8 = (uint8_t *)&af_cfg,
+  };
+  struct v4l2_ext_controls controls = {
+      .ctrl_class = V4L2_CTRL_CLASS_USER,
+      .count = 1,
+      .controls = &control,
+  };
+  esp_err_t ret = ESP_OK;
+  if (ioctl(isp_fd, VIDIOC_S_EXT_CTRLS, &controls)) {
+    ESP_LOGW(TAG, "Disable AF failed");
+    ret = ESP_FAIL;
+  } else {
+    ESP_LOGI(TAG, "ISP auto-focus disabled");
+  }
+  close(isp_fd);
+  return ret;
+}
+
+bool app_video_has_focus_motor(int fd) {
+  struct v4l2_query_ext_ctrl qctrl = {.id = V4L2_CID_FOCUS_ABSOLUTE};
+  return (ioctl(fd, VIDIOC_QUERY_EXT_CTRL, &qctrl) == 0);
 }
 
 esp_err_t app_video_deinit(void) {

@@ -179,6 +179,51 @@ esp_err_t app_video_register_frame_operation_cb(
 esp_err_t app_video_close(int video_fd);
 
 /**
+ * @brief Set the sensor auto-exposure target level.
+ *
+ * Controls how bright the sensor tries to make the image.
+ * Lower values reduce exposure time and gain, which decreases
+ * motion blur and saturated regions. Default is 0x50 (80).
+ *
+ * @param video_fd File descriptor for the video device.
+ * @param level AE target level (range: 2-235).
+ * @return ESP_OK on success, or ESP_FAIL on failure.
+ */
+esp_err_t app_video_set_ae_target(int video_fd, uint32_t level);
+
+/**
+ * @brief Set the camera focus position (DW9714 motor).
+ *
+ * Manually sets the lens focal position, bypassing auto-focus.
+ * Lower values focus closer, higher values focus farther.
+ *
+ * @param video_fd File descriptor for the video device.
+ * @param position Focus position (range: 0-1023).
+ * @return ESP_OK on success, or ESP_FAIL on failure.
+ */
+esp_err_t app_video_set_focus(int video_fd, uint32_t position);
+
+/**
+ * @brief Check if a focus motor (DW9714) is available.
+ *
+ * Probes the V4L2_CID_FOCUS_ABSOLUTE control at runtime.
+ *
+ * @param video_fd File descriptor for the video device.
+ * @return true if focus motor is available, false otherwise.
+ */
+bool app_video_has_focus_motor(int video_fd);
+
+/**
+ * @brief Disable the ISP auto-focus algorithm.
+ *
+ * Opens the ISP device internally. Must be called after streaming
+ * starts to prevent the IPA pipeline from overriding the focus position.
+ *
+ * @return ESP_OK on success, or ESP_FAIL on failure.
+ */
+esp_err_t app_video_disable_af(void);
+
+/**
  * @brief Deinitialize the video system.
  *
  * Calls esp_video_deinit() to clean up all video hardware resources.
