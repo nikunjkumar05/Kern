@@ -1,6 +1,6 @@
 /*
  * K-Quirc Version Database
- * QR-code version information for versions 1-24
+ * QR-code version information for versions 1-25
  */
 
 #include "k_quirc_internal.h"
@@ -175,4 +175,11 @@ const struct quirc_version_info quirc_version_db[QUIRC_MAX_VERSION + 1] = {
              {.bs = 147, .dw = 117, .ns = 6},
              {.bs = 46, .dw = 16, .ns = 30},
              {.bs = 54, .dw = 24, .ns = 11}}},
+    {/* Version 25 */
+     .data_bytes = 1588,
+     .apat = {6, 32, 58, 84, 110, 0},
+     .ecc = {{.bs = 75, .dw = 47, .ns = 8},
+             {.bs = 132, .dw = 106, .ns = 8},
+             {.bs = 45, .dw = 15, .ns = 22},
+             {.bs = 54, .dw = 24, .ns = 3}}},
 };
