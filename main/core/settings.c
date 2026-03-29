@@ -11,6 +11,8 @@ static const char *KEY_DEFAULT_NET = "def_net";
 static const char *KEY_DEFAULT_POL = "def_pol";
 static const char *KEY_BRIGHTNESS = "bright";
 static const char *KEY_ROTATION = "rotation";
+static const char *KEY_AE_TARGET = "ae_tgt";
+static const char *KEY_FOCUS_POS = "focus";
 
 static nvs_handle_t settings_nvs;
 static bool initialized = false;
@@ -98,6 +100,49 @@ esp_err_t settings_set_rotation(uint8_t rotation) {
   if (rotation > 3)
     rotation = 0;
   esp_err_t err = nvs_set_u8(settings_nvs, KEY_ROTATION, rotation);
+  if (err != ESP_OK)
+    return err;
+  return nvs_commit(settings_nvs);
+}
+
+uint8_t settings_get_ae_target(void) {
+  if (!initialized)
+    return AE_TARGET_DEFAULT;
+  uint8_t val = AE_TARGET_DEFAULT;
+  if (nvs_get_u8(settings_nvs, KEY_AE_TARGET, &val) != ESP_OK)
+    return AE_TARGET_DEFAULT;
+  return (val >= AE_TARGET_MIN && val <= AE_TARGET_MAX) ? val
+                                                        : AE_TARGET_DEFAULT;
+}
+
+esp_err_t settings_set_ae_target(uint8_t level) {
+  if (!initialized)
+    return ESP_ERR_INVALID_STATE;
+  if (level < AE_TARGET_MIN)
+    level = AE_TARGET_MIN;
+  if (level > AE_TARGET_MAX)
+    level = AE_TARGET_MAX;
+  esp_err_t err = nvs_set_u8(settings_nvs, KEY_AE_TARGET, level);
+  if (err != ESP_OK)
+    return err;
+  return nvs_commit(settings_nvs);
+}
+
+uint16_t settings_get_focus_position(void) {
+  if (!initialized)
+    return FOCUS_POSITION_DEFAULT;
+  uint16_t val = FOCUS_POSITION_DEFAULT;
+  if (nvs_get_u16(settings_nvs, KEY_FOCUS_POS, &val) != ESP_OK)
+    return FOCUS_POSITION_DEFAULT;
+  return (val <= FOCUS_POSITION_MAX) ? val : FOCUS_POSITION_DEFAULT;
+}
+
+esp_err_t settings_set_focus_position(uint16_t position) {
+  if (!initialized)
+    return ESP_ERR_INVALID_STATE;
+  if (position > FOCUS_POSITION_MAX)
+    position = FOCUS_POSITION_MAX;
+  esp_err_t err = nvs_set_u16(settings_nvs, KEY_FOCUS_POS, position);
   if (err != ESP_OK)
     return err;
   return nvs_commit(settings_nvs);
