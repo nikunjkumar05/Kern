@@ -108,8 +108,8 @@ int main(void) {
 
   {
     uint32_t exp[] = {hardened(0), 1, hardened(2), 2, 1000000000};
-    test_parse_valid("TV1: m/0'/1/2'/2/1000000000", "m/0'/1/2'/2/1000000000",
-                     5, exp);
+    test_parse_valid("TV1: m/0'/1/2'/2/1000000000", "m/0'/1/2'/2/1000000000", 5,
+                     exp);
   }
 
   /* BIP32 Test Vector 2 paths */
@@ -239,13 +239,19 @@ int main(void) {
   test_parse_invalid("invalid: trailing slash m/", "m/");
   test_parse_invalid("invalid: trailing slash m/0/", "m/0/");
   test_parse_invalid("invalid: m in path m/0/m", "m/0/m");
-  test_parse_invalid("invalid: m/2147483648' (overflow hardened)", "m/2147483648'");
-  test_parse_invalid("invalid: m/4294967295' (max u32 hardened)", "m/4294967295'");
-  test_parse_invalid("invalid: m/2147483648 (non-hardened in hardened range)", "m/2147483648");
-  test_parse_invalid("invalid: m/4294967295 (max u32 non-hardened)", "m/4294967295");
-  test_parse_invalid("invalid: m/4294967296 (u32 overflow wrap)", "m/4294967296");
+  test_parse_invalid("invalid: m/2147483648' (overflow hardened)",
+                     "m/2147483648'");
+  test_parse_invalid("invalid: m/4294967295' (max u32 hardened)",
+                     "m/4294967295'");
+  test_parse_invalid("invalid: m/2147483648 (non-hardened in hardened range)",
+                     "m/2147483648");
+  test_parse_invalid("invalid: m/4294967295 (max u32 non-hardened)",
+                     "m/4294967295");
+  test_parse_invalid("invalid: m/4294967296 (u32 overflow wrap)",
+                     "m/4294967296");
   test_parse_invalid("invalid: m/9999999999 (large overflow)", "m/9999999999");
-  test_parse_invalid("invalid: m/99999999999999999999 (huge overflow)", "m/99999999999999999999");
+  test_parse_invalid("invalid: m/99999999999999999999 (huge overflow)",
+                     "m/99999999999999999999");
   test_parse_invalid("invalid: m/0'' (double hardened)", "m/0''");
   test_parse_invalid("invalid: m/0'h (double hardened mixed)", "m/0'h");
   test_parse_invalid("invalid: m/0h' (double hardened mixed)", "m/0h'");
@@ -282,9 +288,16 @@ int main(void) {
     } else {
       bool ok = true;
       for (size_t i = 0; i < 10; i++) {
-        if (indices[i] != exp[i]) { ok = false; break; }
+        if (indices[i] != exp[i]) {
+          ok = false;
+          break;
+        }
       }
-      if (ok) { PASS(); } else { FAIL("wrong indices"); }
+      if (ok) {
+        PASS();
+      } else {
+        FAIL("wrong indices");
+      }
     }
   }
 
