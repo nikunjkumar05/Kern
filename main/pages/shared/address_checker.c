@@ -5,9 +5,6 @@
 #include "../../ui/dialog.h"
 #include <stdlib.h>
 #include <string.h>
-#ifdef SIMULATOR
-#include <stdio.h>
-#endif
 #include <strings.h>
 #include <wally_address.h>
 #include <wally_core.h>

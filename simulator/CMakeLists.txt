@@ -276,9 +276,6 @@ target_compile_options(kern_simulator PRIVATE
     -include mbedtls_compat.h
 )
 
-# keyboard.c uses snprintf without including stdio.h (GCC 14 makes this an error)
-set_source_files_properties(${APP_UI_DIR}/keyboard.c PROPERTIES COMPILE_OPTIONS "-Wno-implicit-function-declaration")
-
 target_link_libraries(kern_simulator PRIVATE
     SDL2
     Threads::Threads

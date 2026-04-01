@@ -11,9 +11,6 @@
 #include <lvgl.h>
 #include <stdlib.h>
 #include <string.h>
-#ifdef SIMULATOR
-#include <stdio.h>
-#endif
 #include <wally_core.h>
 
 #include "../../../utils/secure_mem.h"

@@ -1,8 +1,15 @@
 /*
- * Compatibility shim: maps mbedTLS 3.x/4.x API names used by ESP-IDF
- * to the mbedTLS 2.x API available on the host system.
+ * Simulator compatibility shim — force-included via -include in CMakeLists.txt.
+ *
+ * 1. Provides standard C headers that ESP-IDF pulls in transitively but
+ *    host GCC does not.
+ * 2. Maps mbedTLS 3.x/4.x API names used by ESP-IDF to the 2.x API
+ *    available on the host system.
  */
 #pragma once
+
+#include <stdio.h>
+#include <string.h>
 
 #include <mbedtls/md.h>
 #include <mbedtls/pkcs5.h>
