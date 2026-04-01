@@ -273,6 +273,7 @@ target_compile_options(kern_simulator PRIVATE
     -Wno-sign-compare
     -Wno-missing-field-initializers
     -Wno-type-limits
+    -include mbedtls_compat.h
 )
 
 # keyboard.c uses snprintf without including stdio.h (GCC 14 makes this an error)
