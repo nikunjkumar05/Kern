@@ -28,6 +28,9 @@
 #include <stdio.h>
 #include <getopt.h>
 #include <stdlib.h>
+#include <sys/mman.h>
+#include <sys/prctl.h>
+#include <sys/stat.h>
 #include "esp_log.h"
 
 #ifndef SIM_LCD_H_RES
@@ -111,6 +114,23 @@ static void print_usage(const char *prog) {
 }
 
 int main(int argc, char *argv[]) {
+    /* Restrict permissions on every file the simulator creates (NVS,
+     * SD card files, etc.) so they cannot be read by other users. */
+    umask(077);
+
+    /* Best-effort: keep pages out of swap and core dumps so a real seed
+     * accidentally typed into the simulator does not hit disk.  Both calls
+     * are non-fatal — typical desktops cap RLIMIT_MEMLOCK low. */
+    (void)mlockall(MCL_CURRENT | MCL_FUTURE);
+    (void)prctl(PR_SET_DUMPABLE, 0, 0, 0, 0);
+
+    fprintf(stderr,
+        "\n"
+        "  \x1b[1;31m================================================================\x1b[0m\n"
+        "  \x1b[1;31m  Kern SIMULATOR - developer build, DO NOT USE WITH REAL FUNDS\x1b[0m\n"
+        "  \x1b[1;31m================================================================\x1b[0m\n"
+        "\n");
+
     /* Parse CLI arguments before any init */
     static const struct option long_opts[] = {
         { "qr-image", required_argument, NULL, 'q' },

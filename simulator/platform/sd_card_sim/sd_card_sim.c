@@ -28,10 +28,32 @@ static const char *sdcard_root(void) {
     return s_sdcard_root_override ? s_sdcard_root_override : SD_CARD_MOUNT_POINT;
 }
 
+/* Reject any path containing a ".." component — the simulator's SD root is
+ * a real directory on the host, so a traversal would escape into the user's
+ * filesystem.  Returns true if the path is safe. */
+static bool path_is_safe(const char *path) {
+    if (!path) return false;
+    const char *p = path;
+    while (*p) {
+        if (p[0] == '.' && p[1] == '.' &&
+            (p[2] == '\0' || p[2] == '/') &&
+            (p == path || p[-1] == '/')) {
+            return false;
+        }
+        p++;
+    }
+    return true;
+}
+
 /* If s_sdcard_root_override is set and path starts with SD_CARD_MOUNT_POINT,
  * rewrite path into buf replacing that prefix with s_sdcard_root_override.
- * Returns a pointer to the (possibly rewritten) path to use. */
+ * Returns a pointer to the (possibly rewritten) path to use, or NULL if the
+ * path contains a traversal component. */
 static const char *rewrite_path(const char *path, char *buf, size_t bufsz) {
+    if (!path_is_safe(path)) {
+        ESP_LOGE(TAG, "rejected unsafe path: %s", path ? path : "(null)");
+        return NULL;
+    }
     if (s_sdcard_root_override) {
         size_t mlen = strlen(SD_CARD_MOUNT_POINT);
         if (strncmp(path, SD_CARD_MOUNT_POINT, mlen) == 0) {
@@ -83,6 +105,7 @@ esp_err_t sd_card_write_file(const char *path, const uint8_t *data, size_t len) 
     if (!path || !data) return ESP_ERR_INVALID_ARG;
     char buf[1024];
     const char *rpath = rewrite_path(path, buf, sizeof(buf));
+    if (!rpath) return ESP_ERR_INVALID_ARG;
     FILE *f = fopen(rpath, "wb");
     if (!f) {
         ESP_LOGE(TAG, "write_file: cannot open %s: %s", rpath, strerror(errno));
@@ -97,6 +120,7 @@ esp_err_t sd_card_read_file(const char *path, uint8_t **data_out, size_t *len_ou
     if (!path || !data_out || !len_out) return ESP_ERR_INVALID_ARG;
     char pathbuf[1024];
     const char *rpath = rewrite_path(path, pathbuf, sizeof(pathbuf));
+    if (!rpath) return ESP_ERR_INVALID_ARG;
     FILE *f = fopen(rpath, "rb");
     if (!f) return ESP_ERR_NOT_FOUND;
     fseek(f, 0, SEEK_END);
@@ -116,6 +140,7 @@ esp_err_t sd_card_file_exists(const char *path, bool *exists) {
     if (!path || !exists) return ESP_ERR_INVALID_ARG;
     char buf[1024];
     const char *rpath = rewrite_path(path, buf, sizeof(buf));
+    if (!rpath) { *exists = false; return ESP_ERR_INVALID_ARG; }
     *exists = (access(rpath, F_OK) == 0);
     return ESP_OK;
 }
@@ -124,6 +149,7 @@ esp_err_t sd_card_delete_file(const char *path) {
     if (!path) return ESP_ERR_INVALID_ARG;
     char buf[1024];
     const char *rpath = rewrite_path(path, buf, sizeof(buf));
+    if (!rpath) return ESP_ERR_INVALID_ARG;
     return (remove(rpath) == 0) ? ESP_OK : ESP_FAIL;
 }
 
@@ -134,6 +160,7 @@ esp_err_t sd_card_list_files(const char *dir_path, char ***files_out, int *count
 
     char buf[1024];
     const char *rpath = rewrite_path(dir_path, buf, sizeof(buf));
+    if (!rpath) return ESP_ERR_INVALID_ARG;
     DIR *d = opendir(rpath);
     if (!d) return ESP_OK; /* directory doesn't exist → empty list */
 

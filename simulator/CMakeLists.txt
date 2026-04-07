@@ -290,7 +290,14 @@ target_compile_options(kern_simulator PRIVATE
     -Wno-missing-field-initializers
     -Wno-type-limits
     -include mbedtls_compat.h
+    # Hardening — the simulator parses untrusted input (image files, NVS
+    # files, V4L2 frames). These flags are cheap and standard for any host
+    # binary in that situation.
+    -fstack-protector-strong
+    -D_FORTIFY_SOURCE=2
+    -fPIE
 )
+set_target_properties(kern_simulator PROPERTIES POSITION_INDEPENDENT_CODE ON)
 
 target_link_options(kern_simulator PRIVATE
     # Redirect lv_refr_now() to a no-op wrapper in bsp_sim.c.
@@ -298,6 +305,11 @@ target_link_options(kern_simulator PRIVATE
     # LVGL's dirty state without rendering (SDL2 requires the main thread).
     # The wrapper keeps widgets dirty so lv_timer_handler() renders them.
     -Wl,--wrap=lv_refr_now
+    # Hardening linker flags
+    -pie
+    -Wl,-z,relro
+    -Wl,-z,now
+    -Wl,-z,noexecstack
 )
 
 target_link_libraries(kern_simulator PRIVATE

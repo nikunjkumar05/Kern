@@ -140,6 +140,14 @@ Forcing the software renderer works around this.
 - Camera simulation is file-based by default (build with
   `-DSIM_WEBCAM=ON` for real webcam support via V4L2)
 - eFuse HMAC uses a hardcoded test key (anti-phishing
-  words differ from real device)
+  words differ from real device, and PIN-derived keys are
+  trivially recoverable from `sim_data/`)
+- The simulator links against the host system's mbedTLS
+  (typically 2.x via `libmbedtls-dev`) through a small
+  compatibility shim. This is *not guaranteed* to be
+  bit-for-bit identical to the ESP-IDF-bundled mbedTLS used
+  on the real device. Do not assume that KEF blobs, PIN
+  hashes, or any other cryptographic output produced by the
+  simulator will round-trip on a physical Kern device.
 - PPA rotation may not match hardware exactly
 - Linux only (SDL2 backend)

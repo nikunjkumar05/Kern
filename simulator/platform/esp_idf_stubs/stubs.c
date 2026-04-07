@@ -9,6 +9,7 @@
 #include "esp_spiffs.h"
 #include "esp_app_desc.h"
 #include "driver/ppa.h"
+#include <errno.h>
 #include <stdbool.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -37,29 +38,54 @@ const char *esp_err_to_name(esp_err_t code) {
     }
 }
 
-/* --- esp_random --- */
+/* --- esp_random ---
+ *
+ * The simulator MUST never fall back to libc rand() — that would silently
+ * produce predictable bytes for mnemonic generation, nonces, and entropy.
+ * /dev/urandom is opened once at first use; any failure (or short read) is
+ * a hard abort.
+ */
+
+#include <fcntl.h>
+
+static int s_urandom_fd = -1;
+
+static void urandom_init_or_die(void) {
+    if (s_urandom_fd >= 0) return;
+    s_urandom_fd = open("/dev/urandom", O_RDONLY | O_CLOEXEC);
+    if (s_urandom_fd < 0) {
+        fprintf(stderr,
+            "[SIM] FATAL: cannot open /dev/urandom (%s). Refusing to use a "
+            "weaker entropy source.\n", strerror(errno));
+        abort();
+    }
+}
+
+static void urandom_read_or_die(void *buf, size_t len) {
+    urandom_init_or_die();
+    uint8_t *p = (uint8_t *)buf;
+    while (len > 0) {
+        ssize_t n = read(s_urandom_fd, p, len);
+        if (n <= 0) {
+            if (n < 0 && errno == EINTR) continue;
+            fprintf(stderr,
+                "[SIM] FATAL: short read from /dev/urandom (%zd): %s\n",
+                n, strerror(errno));
+            abort();
+        }
+        p   += (size_t)n;
+        len -= (size_t)n;
+    }
+}
 
 uint32_t esp_random(void) {
-    uint32_t val = 0;
-    FILE *f = fopen("/dev/urandom", "rb");
-    if (f) {
-        (void)fread(&val, sizeof(val), 1, f);
-        fclose(f);
-    } else {
-        val = (uint32_t)rand();
-    }
+    uint32_t val;
+    urandom_read_or_die(&val, sizeof(val));
     return val;
 }
 
 void esp_fill_random(void *buf, size_t len) {
-    FILE *f = fopen("/dev/urandom", "rb");
-    if (f) {
-        (void)fread(buf, 1, len, f);
-        fclose(f);
-    } else {
-        uint8_t *p = (uint8_t *)buf;
-        for (size_t i = 0; i < len; i++) p[i] = (uint8_t)rand();
-    }
+    urandom_read_or_die(buf, len);
 }
 
 /* --- esp_system --- */

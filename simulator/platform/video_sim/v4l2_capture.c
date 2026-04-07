@@ -17,6 +17,7 @@
 #include <string.h>
 #include <sys/ioctl.h>
 #include <sys/mman.h>
+#include <sys/stat.h>
 #include <unistd.h>
 
 #define V4L2_NUM_BUFS 4
@@ -178,6 +179,19 @@ v4l2_capture_t *v4l2_capture_open(const char *device,
                                    uint32_t desired_height) {
     if (!device)
         device = "/dev/video0";
+
+    /* Sanity-check the device path: must live under /dev/ and be a
+     * character device.  Prevents --webcam from being used to ioctl
+     * unrelated files the user happens to have access to. */
+    if (strncmp(device, "/dev/", 5) != 0) {
+        fprintf(stderr, "v4l2_capture: refusing non-/dev path: %s\n", device);
+        return NULL;
+    }
+    struct stat dst;
+    if (stat(device, &dst) != 0 || !S_ISCHR(dst.st_mode)) {
+        fprintf(stderr, "v4l2_capture: %s is not a character device\n", device);
+        return NULL;
+    }
 
     int fd = open(device, O_RDWR | O_NONBLOCK);
     if (fd < 0) {
