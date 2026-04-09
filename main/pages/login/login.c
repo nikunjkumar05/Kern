@@ -5,7 +5,9 @@
 #include "../../ui/dialog.h"
 #include "../../ui/menu.h"
 #include "../../ui/theme.h"
+#ifdef DEV_TOOLS_ENABLED
 #include "../dev_tools/dev_menu.h"
+#endif
 #include "../load_mnemonic/load_menu.h"
 #include "../new_mnemonic/new_mnemonic_menu.h"
 #include "about.h"
@@ -28,7 +30,9 @@ static void return_from_load_menu_cb(void) { login_page_show(); }
 
 static void return_from_new_mnemonic_menu_cb(void) { login_page_show(); }
 
+#ifdef DEV_TOOLS_ENABLED
 static void return_from_dev_menu_cb(void) { login_page_show(); }
+#endif
 
 static void load_mnemonic_cb(void) {
   login_page_hide();
@@ -49,11 +53,13 @@ static void settings_cb(void) {
   login_settings_page_show();
 }
 
+#ifdef DEV_TOOLS_ENABLED
 static void dev_tools_cb(void) {
   login_page_hide();
   dev_menu_page_create(lv_screen_active(), return_from_dev_menu_cb);
   dev_menu_page_show();
 }
+#endif
 
 static void about_cb(void) {
   login_page_hide();
@@ -68,7 +74,9 @@ void login_page_create(lv_obj_t *parent) {
   ui_menu_add_entry(login_menu, "Load Mnemonic", load_mnemonic_cb);
   ui_menu_add_entry(login_menu, "New Mnemonic", new_mnemonic_cb);
   ui_menu_add_entry(login_menu, "Settings", settings_cb);
+#ifdef DEV_TOOLS_ENABLED
   ui_menu_add_entry(login_menu, "Developer Tools", dev_tools_cb);
+#endif
   ui_menu_add_entry(login_menu, "About", about_cb);
   ui_menu_show(login_menu);
 }

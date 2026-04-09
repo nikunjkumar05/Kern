@@ -1,4 +1,4 @@
-#ifdef K_QUIRC_DEBUG
+#if defined(DEV_TOOLS_ENABLED) && defined(K_QUIRC_DEBUG)
 
 #include "decode_snapshots.h"
 
@@ -16,7 +16,7 @@
 
 static const char *TAG = "decode_snapshots";
 
-#define IMG_SIZE 320
+#define IMG_SIZE 640
 #define IMG_PIXELS (IMG_SIZE * IMG_SIZE)
 #define IMG_RGB565_BYTES (IMG_PIXELS * 2)
 
@@ -493,4 +493,4 @@ void decode_snapshots_page_destroy(void) {
   current_file_index = 0;
 }
 
-#endif /* K_QUIRC_DEBUG */
+#endif /* DEV_TOOLS_ENABLED && K_QUIRC_DEBUG */

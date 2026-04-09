@@ -1,5 +1,7 @@
 #include "dev_menu.h"
 
+#ifdef DEV_TOOLS_ENABLED
+
 #include <esp_log.h>
 #include <esp_timer.h>
 #include <freertos/FreeRTOS.h>
@@ -259,3 +261,5 @@ void dev_menu_page_destroy(void) {
   }
   return_callback = NULL;
 }
+
+#endif /* DEV_TOOLS_ENABLED */

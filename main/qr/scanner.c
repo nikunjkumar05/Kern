@@ -25,6 +25,15 @@
 
 #define CAMERA_SCREEN_WIDTH 640
 #define CAMERA_SCREEN_HEIGHT 640
+// Sensor outputs 1280x960 (binning mode). We take a centered 960x960 region
+// and downscale it to 640x640 with the PPA in a single pass (combined with
+// counter-rotation when the display is rotated).
+#define CAMERA_INPUT_WIDTH 1280
+#define CAMERA_INPUT_HEIGHT 960
+#define CAMERA_INPUT_CROP 960
+#define CAMERA_INPUT_CROP_OFFSET_X ((CAMERA_INPUT_WIDTH - CAMERA_INPUT_CROP) / 2)
+#define CAMERA_INPUT_CROP_OFFSET_Y ((CAMERA_INPUT_HEIGHT - CAMERA_INPUT_CROP) / 2)
+#define CAMERA_PPA_SCALE ((float)CAMERA_SCREEN_WIDTH / (float)CAMERA_INPUT_CROP)
 #define QR_FRAME_QUEUE_SIZE 1
 #define QR_DECODE_TASK_STACK_SIZE 32768
 #define QR_DECODE_TASK_PRIORITY 5
@@ -99,10 +108,9 @@ static lv_obj_t *focus_slider = NULL;
 static bool has_focus_motor = false;
 static volatile bool settings_active = false;
 
-// PPA hardware rotation for counter-rotating camera frames
+// PPA does centered crop + downscale (1280x960 -> 640x640) and, when the
+// display is rotated, the matching counter-rotation in the same pass.
 static ppa_client_handle_t cam_ppa_client = NULL;
-static uint8_t *cam_ppa_buffer = NULL;
-static size_t cam_ppa_buffer_size = 0;
 static ppa_srm_rotation_angle_t cam_ppa_angle = PPA_SRM_ROTATION_ANGLE_0;
 
 static volatile int active_frame_operations = 0;
@@ -129,11 +137,6 @@ static void camera_video_frame_operation(uint8_t *camera_buf,
                                          uint32_t camera_buf_hes,
                                          uint32_t camera_buf_ves,
                                          size_t camera_buf_len);
-static void horizontal_crop_cam_to_display(const uint8_t *camera_buf,
-                                           uint8_t *display_buf,
-                                           uint32_t camera_width,
-                                           uint32_t camera_height,
-                                           uint32_t display_width);
 static bool allocate_display_buffers(uint32_t width, uint32_t height);
 static void free_display_buffers(void);
 static void rgb565_to_grayscale(const uint8_t *rgb565_data, uint8_t *gray_data,
@@ -462,15 +465,24 @@ static void create_settings_overlay(void) {
 static void settings_btn_cb(lv_event_t *e) { create_settings_overlay(); }
 
 static uint8_t *allocate_buffer_with_fallback(size_t size) {
-  uint8_t *buffer = heap_caps_malloc(size, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+  // PPA writes directly into these buffers, so they must be cache-line
+  // aligned in size and base address.
+  size_t aligned = (size + CONFIG_CACHE_L2_CACHE_LINE_SIZE - 1) &
+                   ~(CONFIG_CACHE_L2_CACHE_LINE_SIZE - 1);
+  uint8_t *buffer = heap_caps_aligned_calloc(CONFIG_CACHE_L2_CACHE_LINE_SIZE,
+                                             aligned, 1, MALLOC_CAP_SPIRAM);
   if (!buffer) {
-    buffer = heap_caps_malloc(size, MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT);
+    buffer = heap_caps_aligned_calloc(CONFIG_CACHE_L2_CACHE_LINE_SIZE, aligned,
+                                      1, MALLOC_CAP_INTERNAL);
   }
   return buffer;
 }
 
 static bool allocate_display_buffers(uint32_t width, uint32_t height) {
   display_buffer_size = width * height * 2;
+  display_buffer_size = (display_buffer_size + CONFIG_CACHE_L2_CACHE_LINE_SIZE -
+                         1) &
+                        ~(CONFIG_CACHE_L2_CACHE_LINE_SIZE - 1);
 
   display_buffer_a = allocate_buffer_with_fallback(display_buffer_size);
   if (!display_buffer_a) {
@@ -779,38 +791,54 @@ static void camera_video_frame_operation(uint8_t *camera_buf,
     return;
   }
 
+  if (camera_buf_hes != CAMERA_INPUT_WIDTH ||
+      camera_buf_ves != CAMERA_INPUT_HEIGHT) {
+    ESP_LOGE(TAG,
+             "Unexpected camera resolution %" PRIu32 "x%" PRIu32
+             ", expected %dx%d",
+             camera_buf_hes, camera_buf_ves, CAMERA_INPUT_WIDTH,
+             CAMERA_INPUT_HEIGHT);
+    __atomic_sub_fetch(&active_frame_operations, 1, __ATOMIC_SEQ_CST);
+    return;
+  }
+
   uint8_t *back_buffer = (current_display_buffer == display_buffer_a)
                              ? display_buffer_b
                              : display_buffer_a;
 
-  horizontal_crop_cam_to_display(camera_buf, back_buffer, camera_buf_hes,
-                                 camera_buf_ves, CAMERA_SCREEN_WIDTH);
-  buffer_swap_needed = true;
-
-  // PPA counter-rotate outside the LVGL lock so it doesn't block UI
+  // Single PPA pass: centered 960x960 crop -> 640x640 scale + counter-rotation
   uint8_t *display_src = back_buffer;
-  if (cam_ppa_client && cam_ppa_buffer && !closing) {
+  if (cam_ppa_client && !closing) {
     ppa_srm_oper_config_t srm = {
-        .in.buffer = back_buffer,
-        .in.pic_w = CAMERA_SCREEN_WIDTH,
-        .in.pic_h = CAMERA_SCREEN_HEIGHT,
-        .in.block_w = CAMERA_SCREEN_WIDTH,
-        .in.block_h = CAMERA_SCREEN_HEIGHT,
+        .in.buffer = camera_buf,
+        .in.pic_w = CAMERA_INPUT_WIDTH,
+        .in.pic_h = CAMERA_INPUT_HEIGHT,
+        .in.block_w = CAMERA_INPUT_CROP,
+        .in.block_h = CAMERA_INPUT_CROP,
+        .in.block_offset_x = CAMERA_INPUT_CROP_OFFSET_X,
+        .in.block_offset_y = CAMERA_INPUT_CROP_OFFSET_Y,
         .in.srm_cm = PPA_SRM_COLOR_MODE_RGB565,
-        .out.buffer = cam_ppa_buffer,
-        .out.buffer_size = cam_ppa_buffer_size,
+        .out.buffer = back_buffer,
+        .out.buffer_size = display_buffer_size,
         .out.pic_w = CAMERA_SCREEN_WIDTH,
         .out.pic_h = CAMERA_SCREEN_HEIGHT,
+        .out.block_offset_x = 0,
+        .out.block_offset_y = 0,
         .out.srm_cm = PPA_SRM_COLOR_MODE_RGB565,
         .rotation_angle = cam_ppa_angle,
-        .scale_x = 1.0,
-        .scale_y = 1.0,
+        .scale_x = CAMERA_PPA_SCALE,
+        .scale_y = CAMERA_PPA_SCALE,
         .mode = PPA_TRANS_MODE_BLOCKING,
     };
-    if (ppa_do_scale_rotate_mirror(cam_ppa_client, &srm) == ESP_OK) {
-      display_src = cam_ppa_buffer;
+    if (ppa_do_scale_rotate_mirror(cam_ppa_client, &srm) != ESP_OK) {
+      __atomic_sub_fetch(&active_frame_operations, 1, __ATOMIC_SEQ_CST);
+      return;
     }
+  } else {
+    __atomic_sub_fetch(&active_frame_operations, 1, __ATOMIC_SEQ_CST);
+    return;
   }
+  buffer_swap_needed = true;
 
   if (buffer_swap_needed && !closing && !destruction_in_progress &&
       lvgl_port_lock(0)) {
@@ -839,31 +867,6 @@ static void camera_video_frame_operation(uint8_t *camera_buf,
   }
 
   __atomic_sub_fetch(&active_frame_operations, 1, __ATOMIC_SEQ_CST);
-}
-
-static void horizontal_crop_cam_to_display(const uint8_t *camera_buf,
-                                           uint8_t *display_buf,
-                                           uint32_t camera_width,
-                                           uint32_t camera_height,
-                                           uint32_t display_width) {
-  uint32_t display_height = display_width; // square display
-  if (camera_width < display_width || camera_height < display_height) {
-    ESP_LOGE(TAG,
-             "Camera resolution %" PRIu32 "x%" PRIu32
-             " smaller than display %" PRIu32 "x%" PRIu32,
-             camera_width, camera_height, display_width, display_height);
-    return;
-  }
-  uint32_t crop_x = (camera_width - display_width) / 2;
-  uint32_t crop_y = (camera_height - display_height) / 2;
-  const uint16_t *src = (const uint16_t *)camera_buf;
-  uint16_t *dst = (uint16_t *)display_buf;
-
-  for (uint32_t y = 0; y < display_height; y++) {
-    const uint16_t *src_row = src + ((y + crop_y) * camera_width) + crop_x;
-    uint16_t *dst_row = dst + (y * display_width);
-    memcpy(dst_row, src_row, display_width * 2);
-  }
 }
 
 static void camera_init(void) {
@@ -942,35 +945,22 @@ static void camera_init(void) {
     ESP_LOGE(TAG, "Failed to initialize QR decoder");
   }
 
-  // Set up PPA hardware rotation to counter-rotate camera frames when
-  // display rotation is active. This keeps display rotation ON (so UI
-  // widgets render correctly) while the camera feed appears un-rotated.
-  lv_display_rotation_t rot = lv_display_get_rotation(lv_display_get_default());
-  if (rot != LV_DISPLAY_ROTATION_0) {
-    static const ppa_srm_rotation_angle_t counter_map[] = {
-        [LV_DISPLAY_ROTATION_0] = PPA_SRM_ROTATION_ANGLE_0,
-        [LV_DISPLAY_ROTATION_90] = PPA_SRM_ROTATION_ANGLE_270,
-        [LV_DISPLAY_ROTATION_180] = PPA_SRM_ROTATION_ANGLE_180,
-        [LV_DISPLAY_ROTATION_270] = PPA_SRM_ROTATION_ANGLE_90,
-    };
-    cam_ppa_angle = counter_map[rot];
+  // PPA does centered crop + downscale on every frame, plus a
+  // counter-rotation when the display itself is rotated (so UI widgets
+  // render correctly while the camera feed stays upright).
+  static const ppa_srm_rotation_angle_t counter_map[] = {
+      [LV_DISPLAY_ROTATION_0] = PPA_SRM_ROTATION_ANGLE_0,
+      [LV_DISPLAY_ROTATION_90] = PPA_SRM_ROTATION_ANGLE_270,
+      [LV_DISPLAY_ROTATION_180] = PPA_SRM_ROTATION_ANGLE_180,
+      [LV_DISPLAY_ROTATION_270] = PPA_SRM_ROTATION_ANGLE_90,
+  };
+  cam_ppa_angle =
+      counter_map[lv_display_get_rotation(lv_display_get_default())];
 
-    ppa_client_config_t ppa_cfg = {.oper_type = PPA_OPERATION_SRM};
-    if (ppa_register_client(&ppa_cfg, &cam_ppa_client) == ESP_OK) {
-      cam_ppa_buffer_size = CAMERA_SCREEN_WIDTH * CAMERA_SCREEN_HEIGHT * 2;
-      cam_ppa_buffer_size =
-          (cam_ppa_buffer_size + CONFIG_CACHE_L2_CACHE_LINE_SIZE - 1) &
-          ~(CONFIG_CACHE_L2_CACHE_LINE_SIZE - 1);
-      cam_ppa_buffer =
-          heap_caps_aligned_calloc(CONFIG_CACHE_L2_CACHE_LINE_SIZE,
-                                   cam_ppa_buffer_size, 1, MALLOC_CAP_SPIRAM);
-      if (!cam_ppa_buffer) {
-        ESP_LOGW(TAG, "Failed to allocate PPA buffer, camera won't "
-                      "counter-rotate");
-        ppa_unregister_client(cam_ppa_client);
-        cam_ppa_client = NULL;
-      }
-    }
+  ppa_client_config_t ppa_cfg = {.oper_type = PPA_OPERATION_SRM};
+  if (ppa_register_client(&ppa_cfg, &cam_ppa_client) != ESP_OK) {
+    ESP_LOGE(TAG, "Failed to register PPA client for camera scaler");
+    cam_ppa_client = NULL;
   }
 }
 
@@ -1119,16 +1109,10 @@ void qr_scanner_page_destroy(void) {
 
   free_display_buffers();
 
-  // Clean up PPA camera rotation resources
   if (cam_ppa_client) {
     ppa_unregister_client(cam_ppa_client);
     cam_ppa_client = NULL;
   }
-  if (cam_ppa_buffer) {
-    free(cam_ppa_buffer);
-    cam_ppa_buffer = NULL;
-  }
-  cam_ppa_buffer_size = 0;
   cam_ppa_angle = PPA_SRM_ROTATION_ANGLE_0;
 
   if (video_system_initialized) {

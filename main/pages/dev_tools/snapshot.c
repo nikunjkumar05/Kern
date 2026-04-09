@@ -1,5 +1,7 @@
 #include "snapshot.h"
 
+#ifdef DEV_TOOLS_ENABLED
+
 #include <esp_log.h>
 #include <esp_timer.h>
 #include <freertos/FreeRTOS.h>
@@ -19,8 +21,8 @@ static const char *TAG = "snapshot";
 
 #define CAMERA_WIDTH 640
 #define CAMERA_HEIGHT 640
-#define GRAY_WIDTH 320
-#define GRAY_HEIGHT 320
+#define GRAY_WIDTH CAMERA_WIDTH
+#define GRAY_HEIGHT CAMERA_HEIGHT
 
 typedef enum {
   CAMERA_EVENT_TASK_RUN = BIT(0),
@@ -98,20 +100,17 @@ static void free_buffers(void) {
   SAFE_FREE_STATIC(grayscale_buffer);
 }
 
-static void rgb565_to_grayscale_downsample(const uint8_t *rgb565_data,
-                                           uint8_t *gray_data) {
+static void rgb565_to_grayscale(const uint8_t *rgb565_data,
+                                uint8_t *gray_data) {
   const uint16_t *pixels = (const uint16_t *)rgb565_data;
+  uint32_t total = GRAY_WIDTH * GRAY_HEIGHT;
 
-  for (uint32_t dst_y = 0; dst_y < GRAY_HEIGHT; dst_y++) {
-    uint32_t src_y = dst_y * 2;
-    for (uint32_t dst_x = 0; dst_x < GRAY_WIDTH; dst_x++) {
-      uint16_t pixel = pixels[src_y * CAMERA_WIDTH + dst_x * 2];
-      uint8_t r5 = (pixel >> 11) & 0x1F;
-      uint8_t g6 = (pixel >> 5) & 0x3F;
-      uint8_t b5 = pixel & 0x1F;
-      gray_data[dst_y * GRAY_WIDTH + dst_x] =
-          r5_to_gray[r5] + g6_to_gray[g6] + b5_to_gray[b5];
-    }
+  for (uint32_t i = 0; i < total; i++) {
+    uint16_t pixel = pixels[i];
+    uint8_t r5 = (pixel >> 11) & 0x1F;
+    uint8_t g6 = (pixel >> 5) & 0x3F;
+    uint8_t b5 = pixel & 0x1F;
+    gray_data[i] = r5_to_gray[r5] + g6_to_gray[g6] + b5_to_gray[b5];
   }
 }
 
@@ -255,7 +254,7 @@ static void capture_btn_cb(lv_event_t *e) {
     }
   }
 
-  rgb565_to_grayscale_downsample(current_display_buffer, grayscale_buffer);
+  rgb565_to_grayscale(current_display_buffer, grayscale_buffer);
 
   char filename[64];
   snprintf(filename, sizeof(filename), SD_CARD_MOUNT_POINT "/snap_%lld.pgm",
@@ -380,3 +379,5 @@ void snapshot_page_destroy(void) {
   closing = false;
   active_frame_ops = 0;
 }
+
+#endif /* DEV_TOOLS_ENABLED */
