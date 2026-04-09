@@ -16,7 +16,7 @@
 #include "freertos/task.h"
 #include "sdkconfig.h"
 
-static const char *TAG = "waveshare_bsp";
+static const char *TAG = "wave_4b";
 
 // 720x720 panel init sequence (differs from upstream 720x1280 default)
 static const st7703_lcd_init_cmd_t st7703_720_init_cmds[] = {
@@ -429,7 +429,11 @@ static lv_indev_t *bsp_display_indev_init(lv_display_t *disp) {
 }
 
 lv_display_t *bsp_display_start(void) {
-  bsp_display_cfg_t cfg = {.lvgl_port_cfg = ESP_LVGL_PORT_INIT_CONFIG(),
+  lvgl_port_cfg_t lvgl_cfg = ESP_LVGL_PORT_INIT_CONFIG();
+  // Larger task stack: libwally descriptor parsing has deep call chains
+  lvgl_cfg.task_stack = 16384;
+
+  bsp_display_cfg_t cfg = {.lvgl_port_cfg = lvgl_cfg,
                            .buffer_size = BSP_LCD_DRAW_BUFF_SIZE,
                            .double_buffer = BSP_LCD_DRAW_BUFF_DOUBLE,
                            .flags = {
@@ -462,5 +466,11 @@ lv_display_t *bsp_display_start_with_config(const bsp_display_cfg_t *cfg) {
 }
 
 lv_indev_t *bsp_display_get_input_dev(void) { return disp_indev; }
+
+bool bsp_display_lock(uint32_t timeout_ms) {
+  return lvgl_port_lock(timeout_ms);
+}
+
+void bsp_display_unlock(void) { lvgl_port_unlock(); }
 
 #endif

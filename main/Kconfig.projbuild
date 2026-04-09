@@ -1,0 +1,16 @@
+menu "Kern Configuration"
+
+    choice KERN_BOARD
+        prompt "Target board"
+        default KERN_BOARD_WAVE_4B
+        help
+            Select the Waveshare ESP32-P4 board variant.
+
+        config KERN_BOARD_WAVE_4B
+            bool "Waveshare ESP32-P4-WiFi6-Touch-LCD-4B (720x720)"
+
+        config KERN_BOARD_WAVE_35
+            bool "Waveshare ESP32-P4-WiFi6-Touch-LCD-3.5 (320x480)"
+    endchoice
+
+endmenu

@@ -61,24 +61,11 @@ void app_main(void) {
   ESP_ERROR_CHECK(ret);
   settings_init();
 
-  // Larger LVGL task stack: libwally descriptor parsing has deep call
-  // chains that exceed the default 7168-byte stack during multisig validation
-  lvgl_port_cfg_t lvgl_cfg = ESP_LVGL_PORT_INIT_CONFIG();
-  lvgl_cfg.task_stack = 16384;
-
-  bsp_display_cfg_t cfg = {.lvgl_port_cfg = lvgl_cfg,
-                           .buffer_size = BSP_LCD_DRAW_BUFF_SIZE,
-                           .double_buffer = BSP_LCD_DRAW_BUFF_DOUBLE,
-                           .flags = {
-                               .buff_dma = true,
-                               .buff_spiram = true,
-                               .sw_rotate = true,
-                           }};
-  lv_display_t *disp = bsp_display_start_with_config(&cfg);
+  lv_display_t *disp = bsp_display_start();
   ESP_LOGI(TAG, "Display initialized successfully");
 
   theme_init();
-  lvgl_port_lock(0);
+  bsp_display_lock(0);
 
   // Apply saved screen rotation
   lv_display_set_rotation(disp, settings_get_rotation());
@@ -98,7 +85,7 @@ void app_main(void) {
   kern_logo_animated(screen);
 
   // Unlock display to allow LVGL to render the splash screen
-  lvgl_port_unlock();
+  bsp_display_unlock();
 
   // Wait for a few seconds to show the splash
   vTaskDelay(pdMS_TO_TICKS(3000));
@@ -119,7 +106,7 @@ void app_main(void) {
   session_set_expired_callback(session_expired_handler);
 
   // Lock display again for modifications
-  lvgl_port_lock(0);
+  bsp_display_lock(0);
 
   // Clear the screen
   lv_obj_clean(screen);
@@ -132,5 +119,5 @@ void app_main(void) {
   }
 
   // Unlock display
-  lvgl_port_unlock();
+  bsp_display_unlock();
 }

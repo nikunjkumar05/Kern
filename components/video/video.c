@@ -40,27 +40,31 @@ typedef struct {
 static const esp_video_init_csi_config_t s_csi_config = {
     .sccb_config = {.init_sccb = true,
                     .i2c_config = {.port = 0,
-                                   .scl_pin = BSP_I2C_SCL,
-                                   .sda_pin = BSP_I2C_SDA},
+                                   .scl_pin = BSP_CAM_I2C_SCL,
+                                   .sda_pin = BSP_CAM_I2C_SDA},
                     .freq = 100000},
     .reset_pin = -1,
     .pwdn_pin = -1,
 };
 
+#if BSP_CAM_HAS_MOTOR
 static const esp_video_init_cam_motor_config_t s_cam_motor_config = {
     .sccb_config = {.init_sccb = true,
                     .i2c_config = {.port = 0,
-                                   .scl_pin = BSP_I2C_SCL,
-                                   .sda_pin = BSP_I2C_SDA},
+                                   .scl_pin = BSP_CAM_I2C_SCL,
+                                   .sda_pin = BSP_CAM_I2C_SDA},
                     .freq = 100000},
     .reset_pin = -1,
     .pwdn_pin = -1,
     .signal_pin = -1,
 };
+#endif
 
 static const esp_video_init_config_t s_cam_config = {
     .csi = &s_csi_config,
+#if BSP_CAM_HAS_MOTOR
     .cam_motor = &s_cam_motor_config,
+#endif
 };
 
 static app_video_t app_video = {.video_fd = -1};
@@ -81,18 +85,22 @@ esp_err_t app_video_main(i2c_master_bus_handle_t i2c_bus_handle) {
   if (i2c_bus_handle) {
     static esp_video_init_csi_config_t csi_config;
     static esp_video_init_config_t cam_config;
-    static esp_video_init_cam_motor_config_t cam_motor_config;
-    cam_motor_config = s_cam_motor_config;
-    cam_motor_config.sccb_config.init_sccb = false;
-    cam_motor_config.sccb_config.i2c_handle = i2c_bus_handle;
     csi_config = s_csi_config;
     csi_config.sccb_config.init_sccb = false;
     csi_config.sccb_config.i2c_handle = i2c_bus_handle;
 
     cam_config = (esp_video_init_config_t){
         .csi = &csi_config,
-        .cam_motor = &cam_motor_config,
     };
+
+#if BSP_CAM_HAS_MOTOR
+    static esp_video_init_cam_motor_config_t cam_motor_config;
+    cam_motor_config = s_cam_motor_config;
+    cam_motor_config.sccb_config.init_sccb = false;
+    cam_motor_config.sccb_config.i2c_handle = i2c_bus_handle;
+    cam_config.cam_motor = &cam_motor_config;
+#endif
+
     ret = esp_video_init(&cam_config);
   } else {
     ret = esp_video_init(&s_cam_config);

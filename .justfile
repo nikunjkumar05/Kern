@@ -1,12 +1,19 @@
 export IDF_PATH := env_var("HOME") + "/esp/esp-idf"
 export IDF_PATH_FORCE := "1"
 
-build:
-    . $IDF_PATH/export.sh && idf.py build
+# Board parameter: "wave_4b" (default) or "wave_35"
+# Usage: just build wave_35, just flash wave_4b
+# Switching boards requires `just clean` first (sdkconfig is board-specific)
+
+build board="wave_4b":
+    . $IDF_PATH/export.sh && idf.py -D 'SDKCONFIG_DEFAULTS=sdkconfig.defaults;sdkconfig.defaults.{{board}}' build
     cp ./build/compile_commands.json ./compile_commands.json
 
-flash:
-    . $IDF_PATH/export.sh && idf.py flash
+flash board="wave_4b":
+    . $IDF_PATH/export.sh && idf.py -D 'SDKCONFIG_DEFAULTS=sdkconfig.defaults;sdkconfig.defaults.{{board}}' flash
+
+monitor:
+    . $IDF_PATH/export.sh && idf.py monitor
 
 format:
     ./format.sh
@@ -16,6 +23,7 @@ test:
 
 clean:
     rm -fRd build/
+    rm -f sdkconfig
     rm -fRd compile_commands.json
     rm -fRd .cache/
     rm -rf simulator/build

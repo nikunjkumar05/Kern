@@ -22,7 +22,8 @@ DIRS=(
     "$SCRIPT_DIR/components/k_quirc"
     "$SCRIPT_DIR/components/sd_card"
     "$SCRIPT_DIR/components/video"
-    "$SCRIPT_DIR/components/waveshare_bsp"
+    "$SCRIPT_DIR/components/wave_4b"
+    "$SCRIPT_DIR/components/wave_35"
 )
 
 if $CHECK_MODE; then

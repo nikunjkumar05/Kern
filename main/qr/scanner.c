@@ -8,7 +8,7 @@
 #include "../utils/memory_utils.h"
 #include "parser.h"
 #include <driver/ppa.h>
-#include <esp_lcd_touch_gt911.h>
+#include <bsp/esp-bsp.h>
 #include <esp_log.h>
 #include <freertos/FreeRTOS.h>
 #include <freertos/queue.h>
@@ -23,11 +23,18 @@
 #include <esp_timer.h>
 #endif
 
-#define CAMERA_SCREEN_WIDTH 640
-#define CAMERA_SCREEN_HEIGHT 640
+// Camera preview is a square sized to the smaller display dimension, capped at
+// 640px.  On the 4B (720x720) this gives 640; on the 3.5" (320x480) this gives
+// 320.  The PPA scale factor and crop are derived from it automatically.
+#define CAMERA_SCREEN_DIM_MIN                                                  \
+  ((BSP_LCD_H_RES) < (BSP_LCD_V_RES) ? (BSP_LCD_H_RES) : (BSP_LCD_V_RES))
+#define CAMERA_SCREEN_SIZE                                                     \
+  ((CAMERA_SCREEN_DIM_MIN) < 640 ? (CAMERA_SCREEN_DIM_MIN) : 640)
+#define CAMERA_SCREEN_WIDTH CAMERA_SCREEN_SIZE
+#define CAMERA_SCREEN_HEIGHT CAMERA_SCREEN_SIZE
 // Sensor outputs 1280x960 (binning mode). We take a centered 960x960 region
-// and downscale it to 640x640 with the PPA in a single pass (combined with
-// counter-rotation when the display is rotated).
+// and downscale it to CAMERA_SCREEN_SIZE with the PPA in a single pass
+// (combined with counter-rotation when the display is rotated).
 #define CAMERA_INPUT_WIDTH 1280
 #define CAMERA_INPUT_HEIGHT 960
 #define CAMERA_INPUT_CROP 960
@@ -199,10 +206,10 @@ static void log_perf_metrics(void) {
            camera_fps, decode_fps, successes_per_sec, avg_decode_ms,
            avg_grayscale_ms, avg_quirc_ms);
 
-  if (fps_label && lvgl_port_lock(0)) {
+  if (fps_label && bsp_display_lock(0)) {
     lv_label_set_text_fmt(fps_label, "CAM:%.0f DEC:%.0f", camera_fps,
                           decode_fps);
-    lvgl_port_unlock();
+    bsp_display_unlock();
   }
 
   perf_metrics.camera_frames = 0;
@@ -220,7 +227,7 @@ static void create_progress_indicators(int total_parts) {
     return;
   }
 
-  if (!lvgl_port_lock(DISPLAY_LOCK_TIMEOUT_MS)) {
+  if (!bsp_display_lock(DISPLAY_LOCK_TIMEOUT_MS)) {
     return;
   }
 
@@ -241,7 +248,7 @@ static void create_progress_indicators(int total_parts) {
     ESP_LOGE(TAG, "Failed to allocate progress rectangles array");
     lv_obj_del(progress_frame);
     progress_frame = NULL;
-    lvgl_port_unlock();
+    bsp_display_unlock();
     return;
   }
   progress_rectangles_count = total_parts;
@@ -255,7 +262,7 @@ static void create_progress_indicators(int total_parts) {
     theme_apply_solid_rectangle(progress_rectangles[i]);
   }
 
-  lvgl_port_unlock();
+  bsp_display_unlock();
 }
 
 static void update_progress_indicator(int part_index) {
@@ -265,7 +272,7 @@ static void update_progress_indicator(int part_index) {
   }
 
   if (previously_parsed != part_index &&
-      lvgl_port_lock(DISPLAY_LOCK_TIMEOUT_MS)) {
+      bsp_display_lock(DISPLAY_LOCK_TIMEOUT_MS)) {
     lv_obj_set_style_bg_color(progress_rectangles[part_index],
                               highlight_color(), 0);
     if (previously_parsed >= 0) {
@@ -273,7 +280,7 @@ static void update_progress_indicator(int part_index) {
                                 main_color(), 0);
     }
     previously_parsed = part_index;
-    lvgl_port_unlock();
+    bsp_display_unlock();
   }
 }
 
@@ -287,7 +294,7 @@ static void cleanup_progress_indicators(void) {
 static void create_ur_progress_bar(void) {
   if (!qr_scanner_screen || ur_progress_bar)
     return;
-  if (!lvgl_port_lock(DISPLAY_LOCK_TIMEOUT_MS))
+  if (!bsp_display_lock(DISPLAY_LOCK_TIMEOUT_MS))
     return;
 
   int bar_width = lv_obj_get_width(qr_scanner_screen) * 80 / 100;
@@ -306,14 +313,14 @@ static void create_ur_progress_bar(void) {
   theme_apply_solid_rectangle(ur_progress_indicator);
   lv_obj_set_style_bg_color(ur_progress_indicator, highlight_color(), 0);
 
-  lvgl_port_unlock();
+  bsp_display_unlock();
 }
 
 static void update_ur_progress_bar(double percent_complete) {
   if (!ur_progress_bar || !ur_progress_indicator ||
       ur_progress_bar_inner_width <= 0)
     return;
-  if (!lvgl_port_lock(DISPLAY_LOCK_TIMEOUT_MS))
+  if (!bsp_display_lock(DISPLAY_LOCK_TIMEOUT_MS))
     return;
 
   int indicator_width = (int)(ur_progress_bar_inner_width * percent_complete);
@@ -323,7 +330,7 @@ static void update_ur_progress_bar(double percent_complete) {
     indicator_width = ur_progress_bar_inner_width;
 
   lv_obj_set_width(ur_progress_indicator, indicator_width);
-  lvgl_port_unlock();
+  bsp_display_unlock();
 }
 
 static void cleanup_ur_progress_bar(void) {
@@ -843,7 +850,7 @@ static void camera_video_frame_operation(uint8_t *camera_buf,
   buffer_swap_needed = true;
 
   if (buffer_swap_needed && !closing && !destruction_in_progress &&
-      lvgl_port_lock(0)) {
+      bsp_display_lock(0)) {
     // Re-check after taking lock — destroy may have run between the check
     // above and acquiring the lock, nulling camera_img
     if (!closing && !destruction_in_progress && camera_img) {
@@ -853,7 +860,7 @@ static void camera_video_frame_operation(uint8_t *camera_buf,
       lv_refr_now(NULL);
     }
     buffer_swap_needed = false;
-    lvgl_port_unlock();
+    bsp_display_unlock();
   }
 
   // QR decoder gets un-rotated buffer (QR codes are orientation-invariant,
@@ -1091,7 +1098,7 @@ void qr_scanner_page_destroy(void) {
 
   qr_decoder_cleanup();
 
-  bool display_locked = lvgl_port_lock(1000);
+  bool display_locked = bsp_display_lock(1000);
   if (!display_locked)
     ESP_LOGW(TAG, "Failed to lock display for UI cleanup");
 
@@ -1107,7 +1114,7 @@ void qr_scanner_page_destroy(void) {
   }
 
   if (display_locked)
-    lvgl_port_unlock();
+    bsp_display_unlock();
 
   free_display_buffers();
 

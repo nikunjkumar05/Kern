@@ -2,6 +2,7 @@
 
 #include "capture_entropy.h"
 
+#include <bsp/esp-bsp.h>
 #include <driver/ppa.h>
 #include <esp_log.h>
 #include <freertos/FreeRTOS.h>
@@ -19,8 +20,11 @@
 
 static const char *TAG = "capture_entropy";
 
-#define CAMERA_WIDTH 640
-#define CAMERA_HEIGHT 640
+#define CAMERA_DIM_MIN                                                         \
+  ((BSP_LCD_H_RES) < (BSP_LCD_V_RES) ? (BSP_LCD_H_RES) : (BSP_LCD_V_RES))
+#define CAMERA_SIZE ((CAMERA_DIM_MIN) < 640 ? (CAMERA_DIM_MIN) : 640)
+#define CAMERA_WIDTH CAMERA_SIZE
+#define CAMERA_HEIGHT CAMERA_SIZE
 #define ENTROPY_THRESHOLD 6.0 // Minimum acceptable entropy (bits)
 
 typedef enum {
@@ -198,14 +202,14 @@ static void camera_frame_cb(uint8_t *camera_buf, uint8_t camera_buf_index,
     }
   }
 
-  if (!closing && !dialog_showing && lvgl_port_lock(0)) {
+  if (!closing && !dialog_showing && bsp_display_lock(0)) {
     if (!closing && camera_img) {
       current_display_buffer = back_buffer;
       img_dsc.data = display_src;
       lv_img_set_src(camera_img, &img_dsc);
       lv_refr_now(NULL);
     }
-    lvgl_port_unlock();
+    bsp_display_unlock();
   }
 
   __atomic_sub_fetch(&active_frame_ops, 1, __ATOMIC_SEQ_CST);
@@ -399,14 +403,14 @@ void capture_entropy_page_destroy(void) {
     camera_handle = -1;
   }
 
-  bool locked = lvgl_port_lock(1000);
+  bool locked = bsp_display_lock(1000);
   camera_img = NULL;
   if (capture_screen) {
     lv_obj_del(capture_screen);
     capture_screen = NULL;
   }
   if (locked)
-    lvgl_port_unlock();
+    bsp_display_unlock();
 
   free_buffers();
 

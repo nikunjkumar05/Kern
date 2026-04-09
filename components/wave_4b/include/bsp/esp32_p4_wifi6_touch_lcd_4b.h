@@ -36,6 +36,11 @@
 #define BSP_LCD_TOUCH_RST (GPIO_NUM_23)
 #define BSP_LCD_TOUCH_INT (GPIO_NUM_NC)
 
+/* Camera I2C (shares main I2C bus on this board) */
+#define BSP_CAM_I2C_SCL BSP_I2C_SCL
+#define BSP_CAM_I2C_SDA BSP_I2C_SDA
+#define BSP_CAM_HAS_MOTOR 1
+
 /**************************************************************************************************
  *
  * I2C interface
@@ -73,5 +78,19 @@ typedef struct {
 lv_display_t *bsp_display_start(void);
 lv_display_t *bsp_display_start_with_config(const bsp_display_cfg_t *cfg);
 lv_indev_t *bsp_display_get_input_dev(void);
+
+/**
+ * @brief Take LVGL mutex
+ *
+ * @param[in] timeout_ms Timeout in [ms]. 0 will block indefinitely.
+ * @return true  Mutex was taken
+ * @return false Mutex was NOT taken
+ */
+bool bsp_display_lock(uint32_t timeout_ms);
+
+/**
+ * @brief Give LVGL mutex
+ */
+void bsp_display_unlock(void);
 
 #endif

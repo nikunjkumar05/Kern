@@ -50,10 +50,10 @@ typedef void (*app_video_frame_operation_cb_t)(uint8_t *camera_buf,
 #define CAM_BUF_NUM (2)            /**< Default number of camera buffers */
 
 /* Configure video format based on LCD color format */
-#if CONFIG_BSP_LCD_COLOR_FORMAT_RGB565
-#define APP_VIDEO_FMT (APP_VIDEO_FMT_RGB565)
-#elif CONFIG_BSP_LCD_COLOR_FORMAT_RGB888
+#if CONFIG_BSP_LCD_COLOR_FORMAT_RGB888
 #define APP_VIDEO_FMT (APP_VIDEO_FMT_RGB888)
+#else
+#define APP_VIDEO_FMT (APP_VIDEO_FMT_RGB565)
 #endif
 
 /* ----------------------- Function Declarations ----------------------- */

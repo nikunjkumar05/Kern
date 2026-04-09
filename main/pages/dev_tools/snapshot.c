@@ -2,6 +2,7 @@
 
 #ifdef DEV_TOOLS_ENABLED
 
+#include <bsp/esp-bsp.h>
 #include <esp_log.h>
 #include <esp_timer.h>
 #include <freertos/FreeRTOS.h>
@@ -19,8 +20,11 @@
 
 static const char *TAG = "snapshot";
 
-#define CAMERA_WIDTH 640
-#define CAMERA_HEIGHT 640
+#define CAMERA_DIM_MIN                                                         \
+  ((BSP_LCD_H_RES) < (BSP_LCD_V_RES) ? (BSP_LCD_H_RES) : (BSP_LCD_V_RES))
+#define CAMERA_SIZE ((CAMERA_DIM_MIN) < 640 ? (CAMERA_DIM_MIN) : 640)
+#define CAMERA_WIDTH CAMERA_SIZE
+#define CAMERA_HEIGHT CAMERA_SIZE
 #define GRAY_WIDTH CAMERA_WIDTH
 #define GRAY_HEIGHT CAMERA_HEIGHT
 
@@ -178,12 +182,12 @@ static void camera_frame_cb(uint8_t *camera_buf, uint8_t camera_buf_index,
 
   horizontal_crop(camera_buf, back_buffer, camera_buf_hes, camera_buf_ves);
 
-  if (!closing && camera_img && lvgl_port_lock(0)) {
+  if (!closing && camera_img && bsp_display_lock(0)) {
     current_display_buffer = back_buffer;
     img_dsc.data = current_display_buffer;
     lv_img_set_src(camera_img, &img_dsc);
     lv_refr_now(NULL);
-    lvgl_port_unlock();
+    bsp_display_unlock();
   }
 
   __atomic_sub_fetch(&active_frame_ops, 1, __ATOMIC_SEQ_CST);
@@ -352,7 +356,7 @@ void snapshot_page_destroy(void) {
     camera_handle = -1;
   }
 
-  bool locked = lvgl_port_lock(1000);
+  bool locked = bsp_display_lock(1000);
   camera_img = NULL;
   capture_btn = NULL;
   back_btn = NULL;
@@ -361,7 +365,7 @@ void snapshot_page_destroy(void) {
     snapshot_screen = NULL;
   }
   if (locked)
-    lvgl_port_unlock();
+    bsp_display_unlock();
 
   free_buffers();
 
