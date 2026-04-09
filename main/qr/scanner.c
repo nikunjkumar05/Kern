@@ -31,8 +31,10 @@
 #define CAMERA_INPUT_WIDTH 1280
 #define CAMERA_INPUT_HEIGHT 960
 #define CAMERA_INPUT_CROP 960
-#define CAMERA_INPUT_CROP_OFFSET_X ((CAMERA_INPUT_WIDTH - CAMERA_INPUT_CROP) / 2)
-#define CAMERA_INPUT_CROP_OFFSET_Y ((CAMERA_INPUT_HEIGHT - CAMERA_INPUT_CROP) / 2)
+#define CAMERA_INPUT_CROP_OFFSET_X                                             \
+  ((CAMERA_INPUT_WIDTH - CAMERA_INPUT_CROP) / 2)
+#define CAMERA_INPUT_CROP_OFFSET_Y                                             \
+  ((CAMERA_INPUT_HEIGHT - CAMERA_INPUT_CROP) / 2)
 #define CAMERA_PPA_SCALE ((float)CAMERA_SCREEN_WIDTH / (float)CAMERA_INPUT_CROP)
 #define QR_FRAME_QUEUE_SIZE 1
 #define QR_DECODE_TASK_STACK_SIZE 32768
@@ -480,9 +482,9 @@ static uint8_t *allocate_buffer_with_fallback(size_t size) {
 
 static bool allocate_display_buffers(uint32_t width, uint32_t height) {
   display_buffer_size = width * height * 2;
-  display_buffer_size = (display_buffer_size + CONFIG_CACHE_L2_CACHE_LINE_SIZE -
-                         1) &
-                        ~(CONFIG_CACHE_L2_CACHE_LINE_SIZE - 1);
+  display_buffer_size =
+      (display_buffer_size + CONFIG_CACHE_L2_CACHE_LINE_SIZE - 1) &
+      ~(CONFIG_CACHE_L2_CACHE_LINE_SIZE - 1);
 
   display_buffer_a = allocate_buffer_with_fallback(display_buffer_size);
   if (!display_buffer_a) {
