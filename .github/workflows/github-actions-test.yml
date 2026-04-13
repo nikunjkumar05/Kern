@@ -58,4 +58,4 @@ jobs:
     - name: Build
       run: |
         . ~/esp-idf/export.sh
-        idf.py -D SDKCONFIG_DEFAULTS="sdkconfig.defaults" build all size-components size
+        idf.py -D 'SDKCONFIG_DEFAULTS=sdkconfig.defaults;sdkconfig.defaults.wave_4b' build all size-components size
