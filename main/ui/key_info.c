@@ -37,6 +37,15 @@ lv_obj_t *ui_key_info_create(lv_obj_t *parent) {
   lv_obj_t *cont = theme_create_flex_row(parent);
   lv_obj_set_style_pad_column(cont, theme_get_default_padding(), 0);
 
+  // On small screens the row shares space with corner buttons that are
+  // absolutely positioned over the page.  Allow wrapping and constrain
+  // the row width so content stays between the buttons.
+  int btn_zone = theme_get_corner_button_width();
+  lv_obj_set_width(cont, lv_pct(100));
+  lv_obj_set_style_pad_left(cont, btn_zone, 0);
+  lv_obj_set_style_pad_right(cont, btn_zone, 0);
+  lv_obj_set_flex_flow(cont, LV_FLEX_FLOW_ROW_WRAP);
+
   if (!ui_fingerprint_create(cont, highlight_color()) ||
       !ui_derivation_create(cont, secondary_color())) {
     lv_obj_del(cont);

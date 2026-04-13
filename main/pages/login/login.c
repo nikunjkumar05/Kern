@@ -2,9 +2,12 @@
 
 #include <lvgl.h>
 
+#include "../../ui/battery.h"
 #include "../../ui/dialog.h"
+#include "../../ui/input_helpers.h"
 #include "../../ui/menu.h"
 #include "../../ui/theme.h"
+#include <bsp/pmic.h>
 #ifdef DEV_TOOLS_ENABLED
 #include "../dev_tools/dev_menu.h"
 #endif
@@ -15,6 +18,14 @@
 
 static ui_menu_t *login_menu = NULL;
 static lv_obj_t *login_screen = NULL;
+static lv_obj_t *power_button = NULL;
+
+static void power_button_cb(lv_event_t *e) {
+  (void)e;
+  // Pass NULL user_data to signal "no key to unload"
+  dialog_show_confirm("Power off?", ui_power_off_confirmed_cb, NULL,
+                      DIALOG_STYLE_OVERLAY);
+}
 
 static void return_from_settings_cb(void) {
   login_settings_page_destroy();
@@ -79,6 +90,19 @@ void login_page_create(lv_obj_t *parent) {
 #endif
   ui_menu_add_entry(login_menu, "About", about_cb);
   ui_menu_show(login_menu);
+
+  // Power button at top-left (only useful with PMIC; without it there's
+  // no loaded key to unload, so rebooting from login is pointless)
+  if (bsp_pmic_is_available()) {
+    power_button = ui_create_power_button(login_screen, power_button_cb);
+  }
+
+  // Battery indicator at top-right corner, aligned with title
+  lv_obj_t *bat = ui_battery_create(login_screen);
+  if (bat) {
+    int pad = theme_get_default_padding();
+    lv_obj_align(bat, LV_ALIGN_TOP_RIGHT, -pad, pad);
+  }
 }
 
 void login_page_show(void) {
@@ -92,6 +116,10 @@ void login_page_hide(void) {
 }
 
 void login_page_destroy(void) {
+  if (power_button) {
+    lv_obj_del(power_button);
+    power_button = NULL;
+  }
   if (login_menu) {
     ui_menu_destroy(login_menu);
     login_menu = NULL;

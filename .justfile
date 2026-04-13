@@ -43,6 +43,7 @@ _sim_v_res board:
 # Build the desktop simulator
 sim-build board="wave_4b":
     cd simulator && cmake -B build -S . -DCMAKE_BUILD_TYPE=Debug \
+        -DSIM_BOARD={{board}} \
         -DSIM_LCD_H_RES=$(just _sim_h_res {{board}}) \
         -DSIM_LCD_V_RES=$(just _sim_v_res {{board}}) \
         && cmake --build build -- -j$(nproc)
@@ -67,6 +68,7 @@ sim-qr IMAGE board="wave_4b": (sim-build board)
 # Build simulator with webcam support (V4L2)
 sim-build-webcam board="wave_4b":
     cd simulator && cmake -B build -S . -DCMAKE_BUILD_TYPE=Debug -DSIM_WEBCAM=ON \
+        -DSIM_BOARD={{board}} \
         -DSIM_LCD_H_RES=$(just _sim_h_res {{board}}) \
         -DSIM_LCD_V_RES=$(just _sim_v_res {{board}}) \
         && cmake --build build -- -j$(nproc)

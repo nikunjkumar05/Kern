@@ -1,6 +1,7 @@
 #include "public_key.h"
 #include "../../core/key.h"
 #include "../../core/wallet.h"
+#include "../../ui/battery.h"
 #include "../../ui/input_helpers.h"
 #include "../../ui/key_info.h"
 #include "../../ui/theme.h"
@@ -62,7 +63,8 @@ void public_key_page_create(lv_obj_t *parent, void (*return_cb)(void)) {
   lv_obj_set_style_pad_gap(public_key_screen, theme_get_default_padding(), 0);
 
   // Key info header at top
-  ui_key_info_create(public_key_screen);
+  lv_obj_t *header = ui_key_info_create(public_key_screen);
+  ui_battery_create(header);
 
   lv_obj_t *content_wrapper = lv_obj_create(public_key_screen);
   lv_obj_set_size(content_wrapper, LV_PCT(100), LV_SIZE_CONTENT);

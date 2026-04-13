@@ -2,6 +2,7 @@
 #include "../../core/key.h"
 #include "../../core/wallet.h"
 #include "../../ui/assets/icons_24.h"
+#include "../../ui/battery.h"
 #include "../../ui/dialog.h"
 #include "../../ui/input_helpers.h"
 #include "../../ui/key_info.h"
@@ -12,8 +13,8 @@
 #include "addresses.h"
 #include "backup/backup_menu.h"
 #include "public_key.h"
+#include <bsp/pmic.h>
 #include <esp_log.h>
-#include <esp_system.h>
 #include <string.h>
 
 static lv_obj_t *home_screen = NULL;
@@ -82,17 +83,13 @@ static void menu_scan_cb(void) {
   scan_page_show();
 }
 
-static void reboot_confirmed_cb(bool result, void *user_data) {
-  (void)user_data;
-  if (result) {
-    wallet_unload();
-    esp_restart();
-  }
-}
-
 static void power_button_cb(lv_event_t *e) {
   (void)e;
-  dialog_show_confirm("Unload key and reboot?", reboot_confirmed_cb, NULL,
+  const char *msg =
+      bsp_pmic_is_available() ? "Power off?" : "Unload key and reboot?";
+  // Pass non-NULL user_data to signal "unload key before power-off"
+  static const bool unload = true;
+  dialog_show_confirm(msg, ui_power_off_confirmed_cb, (void *)&unload,
                       DIALOG_STYLE_OVERLAY);
 }
 
@@ -157,13 +154,15 @@ void home_page_create(lv_obj_t *parent) {
                   LV_OBJ_FLAG_HIDDEN | LV_OBJ_FLAG_IGNORE_LAYOUT);
   lv_obj_t *header = ui_key_info_create(main_menu->container);
   lv_obj_move_to_index(header, 0);
+  ui_battery_create(header);
 
   ui_menu_add_entry(main_menu, ICON_QR_CODE "  Scan", menu_scan_cb);
   ui_menu_add_entry(main_menu, "Extended Public Key", menu_xpub_cb);
   ui_menu_add_entry(main_menu, "Addresses", menu_addresses_cb);
   ui_menu_add_entry(main_menu, "Back Up", menu_backup_cb);
 
-  // Power button (reboot) at top-left
+  // Power button at top-left (power-off on PMIC boards, unload+reboot
+  // otherwise)
   power_button = ui_create_power_button(home_screen, power_button_cb);
 
   // Settings button at top-right

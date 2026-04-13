@@ -5,6 +5,7 @@
 #include "../../core/wallet.h"
 #include "../../qr/scanner.h"
 #include "../../ui/assets/icons_36.h"
+#include "../../ui/battery.h"
 #include "../../ui/dialog.h"
 #include "../../ui/input_helpers.h"
 #include "../../ui/key_info.h"
@@ -456,7 +457,8 @@ void addresses_page_create(lv_obj_t *parent, void (*return_cb)(void)) {
   lv_obj_set_style_pad_gap(addresses_screen, theme_get_default_padding(), 0);
 
   // Key info header
-  ui_key_info_create(addresses_screen);
+  lv_obj_t *header = ui_key_info_create(addresses_screen);
+  ui_battery_create(header);
 
   wallet_policy_t policy = wallet_get_policy();
   bool needs_descriptor =

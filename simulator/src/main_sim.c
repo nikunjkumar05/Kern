@@ -24,6 +24,7 @@
 #include "sim_video.h"
 #include "sim_nvs.h"
 #include "sim_sdcard.h"
+#include <bsp/pmic.h>
 #include <SDL2/SDL.h>
 #include <stdio.h>
 #include <getopt.h>
@@ -234,6 +235,9 @@ int main(int argc, char *argv[]) {
 
     /* Initialize persistent settings */
     settings_init();
+
+    /* Initialize PMIC (simulated battery on wave_35; no-op on wave_4b) */
+    bsp_pmic_init();
 
     /* -----------------------------------------------------------------------
      * Show animated Kern logo splash screen
