@@ -24,6 +24,7 @@ static lv_obj_t *dice_rolls_screen = NULL;
 static lv_obj_t *back_btn = NULL;
 static lv_obj_t *dice_btnmatrix = NULL;
 static lv_obj_t *title_label = NULL;
+static lv_obj_t *truncate_label = NULL;
 static lv_obj_t *rolls_label = NULL;
 static void (*return_callback)(void) = NULL;
 static char *completed_mnemonic = NULL;
@@ -62,6 +63,10 @@ static void cleanup_ui(void) {
     lv_obj_del(title_label);
     title_label = NULL;
   }
+  if (truncate_label) {
+    lv_obj_del(truncate_label);
+    truncate_label = NULL;
+  }
   if (rolls_label) {
     lv_obj_del(rolls_label);
     rolls_label = NULL;
@@ -95,14 +100,6 @@ static void create_dice_input(void) {
 
   title_label = theme_create_page_title(dice_rolls_screen, "");
 
-  rolls_label = lv_label_create(dice_rolls_screen);
-  lv_obj_set_style_text_color(rolls_label, highlight_color(), 0);
-  lv_obj_set_style_text_font(rolls_label, theme_font_medium(), 0);
-  lv_obj_set_width(rolls_label, LV_PCT(90));
-  lv_label_set_long_mode(rolls_label, LV_LABEL_LONG_WRAP);
-  lv_obj_set_style_text_align(rolls_label, LV_TEXT_ALIGN_CENTER, 0);
-  lv_obj_align(rolls_label, LV_ALIGN_TOP_MID, 0, 130);
-
   back_btn = ui_create_back_button(dice_rolls_screen, back_btn_cb);
 
   dice_btnmatrix = lv_btnmatrix_create(dice_rolls_screen);
@@ -110,6 +107,21 @@ static void create_dice_input(void) {
   lv_obj_align(dice_btnmatrix, LV_ALIGN_BOTTOM_MID, 0, 0);
   lv_obj_set_size(dice_btnmatrix, LV_PCT(100), LV_PCT(50));
   theme_apply_btnmatrix(dice_btnmatrix);
+
+  truncate_label = lv_label_create(dice_rolls_screen);
+  lv_label_set_text(truncate_label, "...");
+  lv_obj_set_style_text_color(truncate_label, highlight_color(), 0);
+  lv_obj_set_style_text_font(truncate_label, theme_font_medium(), 0);
+  lv_obj_align_to(truncate_label, title_label, LV_ALIGN_OUT_BOTTOM_MID, 0, 8);
+  lv_obj_add_flag(truncate_label, LV_OBJ_FLAG_HIDDEN);
+
+  rolls_label = lv_label_create(dice_rolls_screen);
+  lv_obj_set_style_text_color(rolls_label, highlight_color(), 0);
+  lv_obj_set_style_text_font(rolls_label, theme_font_medium(), 0);
+  lv_obj_set_width(rolls_label, LV_PCT(90));
+  lv_label_set_long_mode(rolls_label, LV_LABEL_LONG_WRAP);
+  lv_obj_set_style_text_align(rolls_label, LV_TEXT_ALIGN_CENTER, 0);
+  lv_obj_align_to(rolls_label, dice_btnmatrix, LV_ALIGN_OUT_TOP_MID, 0, -10);
 
   lv_obj_add_event_cb(dice_btnmatrix, dice_btnmatrix_event_cb,
                       LV_EVENT_VALUE_CHANGED, NULL);
@@ -128,11 +140,48 @@ static void update_display(void) {
 
   if (rolls_count == 0) {
     lv_label_set_text(rolls_label, "_");
+    if (truncate_label)
+      lv_obj_add_flag(truncate_label, LV_OBJ_FLAG_HIDDEN);
   } else {
     char display[MAX_ROLLS + 2];
     snprintf(display, sizeof(display), "%s_", rolls_string);
     lv_label_set_text(rolls_label, display);
+
+    // Compute the vertical space available for the rolls label:
+    // from just below the "..." position down to just above the keypad.
+    lv_obj_update_layout(dice_rolls_screen);
+    int32_t keypad_y = lv_obj_get_y(dice_btnmatrix);
+    int32_t title_bottom =
+        lv_obj_get_y(title_label) + lv_obj_get_height(title_label);
+    int32_t trunc_h = truncate_label ? lv_obj_get_height(truncate_label) : 0;
+    // Reserve room for the "..." label + spacing above and below it.
+    int32_t max_label_h = keypad_y - title_bottom - trunc_h - 30;
+    if (max_label_h < 0)
+      max_label_h = 0;
+
+    // If the full text is too tall, trim characters from the front until
+    // the label fits. Keep the most recent rolls (and the trailing "_").
+    int offset = 0;
+    lv_obj_update_layout(rolls_label);
+    while (lv_obj_get_height(rolls_label) > max_label_h &&
+           offset < rolls_count - 1) {
+      offset++;
+      snprintf(display, sizeof(display), "%s_", rolls_string + offset);
+      lv_label_set_text(rolls_label, display);
+      lv_obj_update_layout(rolls_label);
+    }
+
+    if (truncate_label) {
+      if (offset > 0)
+        lv_obj_clear_flag(truncate_label, LV_OBJ_FLAG_HIDDEN);
+      else
+        lv_obj_add_flag(truncate_label, LV_OBJ_FLAG_HIDDEN);
+    }
   }
+
+  // Re-anchor the label above the keypad so it grows upward as lines wrap
+  if (dice_btnmatrix)
+    lv_obj_align_to(rolls_label, dice_btnmatrix, LV_ALIGN_OUT_TOP_MID, 0, -10);
 
   if (dice_btnmatrix) {
     // Done button (index 7)
