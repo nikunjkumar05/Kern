@@ -207,10 +207,19 @@ static void create_overlay(const char *title, const char *placeholder,
                        ready_cb);
 
   if (password_mode) {
+    if (LV_VER_RES <= 480) {
+      lv_obj_align(text_input.textarea, LV_ALIGN_TOP_LEFT,
+                   LV_HOR_RES * 5 / 100, 80);
+      if (text_input.eye_btn)
+        lv_obj_align_to(text_input.eye_btn, text_input.textarea,
+                        LV_ALIGN_OUT_RIGHT_MID, 5, 0);
+    }
+
     strength_label = lv_label_create(overlay_screen);
     lv_label_set_text(strength_label, "");
     lv_obj_set_style_text_font(strength_label, theme_font_small(), 0);
-    lv_obj_align(strength_label, LV_ALIGN_TOP_MID, 0, 195);
+    lv_obj_align_to(strength_label, text_input.textarea,
+                    LV_ALIGN_OUT_BOTTOM_MID, 0, 5);
     lv_obj_add_event_cb(text_input.keyboard, key_changed_cb,
                         LV_EVENT_VALUE_CHANGED, NULL);
   }
