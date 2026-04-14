@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.0.4] - 2026-04-13
+
+### Fixed
+- Scanner PPA Q4.4 quantization
+- Screen rotation, not working with lgvl_adapter, was removed
+- Dice rolls label overflowing the keypad on wave_35; truncates with "..." indicator when full
+
 ## [0.0.3] - 2026-04-13
 
 ### Added
