@@ -1,6 +1,9 @@
 #include "bsp/pmic.h"
 
-/* wave_4b has no PMIC — all calls return ESP_ERR_NOT_SUPPORTED / false. */
+/* No-op PMIC implementation for boards without a dedicated PMIC chip.
+   Boards that have a real PMIC (e.g. wave_35 / AXP2101) provide their
+   own implementation of these symbols and this file is excluded from
+   the build for those boards (see CMakeLists.txt). */
 
 esp_err_t bsp_pmic_init(void) { return ESP_ERR_NOT_SUPPORTED; }
 esp_err_t bsp_pmic_power_off(void) { return ESP_ERR_NOT_SUPPORTED; }

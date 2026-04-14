@@ -31,20 +31,14 @@
 #define BSP_I2C_SCL (GPIO_NUM_8)
 #define BSP_I2C_SDA (GPIO_NUM_7)
 
-/* SPI LCD */
-#define BSP_LCD_SPI_MOSI (GPIO_NUM_20)
-#define BSP_LCD_SPI_CLK (GPIO_NUM_21)
-#define BSP_LCD_SPI_CS (GPIO_NUM_23)
-#define BSP_LCD_DC (GPIO_NUM_26)
-
-#define BSP_LCD_BACKLIGHT (GPIO_NUM_28)
+#define BSP_LCD_BACKLIGHT (GPIO_NUM_26)
 #define BSP_LCD_RST (GPIO_NUM_27)
-#define BSP_LCD_TOUCH_RST (GPIO_NUM_29)
-#define BSP_LCD_TOUCH_INT (GPIO_NUM_50)
+#define BSP_LCD_TOUCH_RST (GPIO_NUM_NC)
+#define BSP_LCD_TOUCH_INT (GPIO_NUM_NC)
 
-/* Camera I2C (separate bus on this board) */
-#define BSP_CAM_I2C_SCL (GPIO_NUM_34)
-#define BSP_CAM_I2C_SDA (GPIO_NUM_31)
+/* Camera I2C (shares main I2C bus on this board) */
+#define BSP_CAM_I2C_SCL BSP_I2C_SCL
+#define BSP_CAM_I2C_SDA BSP_I2C_SDA
 #define BSP_CAM_HAS_MOTOR 0
 
 /**************************************************************************************************

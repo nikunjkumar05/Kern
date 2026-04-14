@@ -2,7 +2,7 @@
 set -e
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-DEVICES="wave_4b wave_35"
+DEVICES="wave_4b wave_35 wave_5"
 VERSION=$(cat "$SCRIPT_DIR/version.txt" | tr -d '[:space:]')
 
 if [ -z "$VERSION" ]; then

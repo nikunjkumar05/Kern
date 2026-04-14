@@ -1,8 +1,8 @@
 export IDF_PATH := env_var("HOME") + "/esp/esp-idf"
 export IDF_PATH_FORCE := "1"
 
-# Board parameter: "wave_4b" (default) or "wave_35"
-# Usage: just build wave_35, just flash wave_4b
+# Board parameter: "wave_4b" (default), "wave_35", or "wave_5"
+# Usage: just build wave_35, just flash wave_4b, just build wave_5
 # Switching boards requires `just clean` first (sdkconfig is board-specific)
 
 build board="wave_4b":
@@ -31,14 +31,14 @@ clean:
     make -C main/core/test clean
 
 # Simulator board resolution mapping
-# wave_4b: 720x720, wave_35: 320x480
+# wave_4b: 720x720, wave_35: 320x480, wave_5: 720x1280
 _sim_h_res board:
     #!/usr/bin/env sh
-    case "{{board}}" in wave_35) echo 320;; *) echo 720;; esac
+    case "{{board}}" in wave_35) echo 320;; wave_5) echo 720;; *) echo 720;; esac
 
 _sim_v_res board:
     #!/usr/bin/env sh
-    case "{{board}}" in wave_35) echo 480;; *) echo 720;; esac
+    case "{{board}}" in wave_35) echo 480;; wave_5) echo 1280;; *) echo 720;; esac
 
 # Build the desktop simulator
 sim-build board="wave_4b":
