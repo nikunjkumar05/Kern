@@ -10,6 +10,7 @@
 #include "utils/bip39_filter.h"
 #include <bsp/display.h>
 #include <bsp/esp-bsp.h>
+#include <bsp/pmic.h>
 #include <esp_check.h>
 #include <esp_err.h>
 #include <esp_log.h>
@@ -61,14 +62,19 @@ void app_main(void) {
   ESP_ERROR_CHECK(ret);
   settings_init();
 
-  lv_display_t *disp = bsp_display_start();
+  bsp_display_start();
   ESP_LOGI(TAG, "Display initialized successfully");
+
+  // Initialize PMIC (AXP2101 on wave_35; no-op on wave_4b)
+  esp_err_t pmic_ret = bsp_pmic_init();
+  if (pmic_ret == ESP_OK) {
+    ESP_LOGI(TAG, "PMIC initialized");
+  } else if (pmic_ret != ESP_ERR_NOT_SUPPORTED) {
+    ESP_LOGW(TAG, "PMIC init failed: %s", esp_err_to_name(pmic_ret));
+  }
 
   theme_init();
   bsp_display_lock(0);
-
-  // Apply saved screen rotation
-  lv_display_set_rotation(disp, settings_get_rotation());
 
   // Set up screen theme background
   lv_obj_t *screen = lv_screen_active();

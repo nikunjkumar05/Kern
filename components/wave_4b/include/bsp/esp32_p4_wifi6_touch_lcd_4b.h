@@ -57,7 +57,6 @@ i2c_master_bus_handle_t bsp_i2c_get_handle(void);
  * LCD interface
  *
  **************************************************************************************************/
-#define BSP_LCD_PIXEL_CLOCK_MHZ (80)
 
 #if (BSP_CONFIG_NO_GRAPHIC_LIB == 0)
 

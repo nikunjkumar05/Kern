@@ -12,6 +12,16 @@ if(NOT DEFINED SIM_LCD_V_RES)
   set(SIM_LCD_V_RES 720)
 endif()
 
+# Board identity (passed from justfile, default wave_4b)
+if(NOT DEFINED SIM_BOARD)
+  set(SIM_BOARD "wave_4b")
+endif()
+
+# Board feature flags
+if(SIM_BOARD STREQUAL "wave_35")
+  set(BSP_HAS_PMIC TRUE)
+endif()
+
 find_package(SDL2 REQUIRED)
 find_package(Threads REQUIRED)
 
@@ -142,6 +152,7 @@ set(APP_UI_SOURCES
     ${APP_UI_DIR}/menu.c
     ${APP_UI_DIR}/nav.c
     ${APP_UI_DIR}/word_selector.c
+    ${APP_UI_DIR}/battery.c
     ${APP_UI_DIR}/key_info.c
     ${APP_UI_DIR}/sankey.c
 )
@@ -157,6 +168,7 @@ option(SIM_WEBCAM "Enable webcam capture via V4L2" OFF)
 
 set(PLATFORM_SIM_SOURCES
     ${CMAKE_CURRENT_SOURCE_DIR}/platform/bsp_sim/bsp_sim.c
+    ${CMAKE_CURRENT_SOURCE_DIR}/platform/bsp_sim/pmic_sim.c
     ${CMAKE_CURRENT_SOURCE_DIR}/platform/sd_card_sim/sd_card_sim.c
     ${CMAKE_CURRENT_SOURCE_DIR}/platform/video_sim/video_sim.c
     ${CMAKE_CURRENT_SOURCE_DIR}/platform/video_sim/stb_image_impl.c
@@ -281,6 +293,7 @@ target_compile_definitions(kern_simulator PRIVATE
     K_QUIRC_ADAPTIVE_THRESHOLD
     K_QUIRC_BILINEAR_THRESHOLD
     $<$<BOOL:${SIM_WEBCAM}>:SIM_WEBCAM=1>
+    $<$<BOOL:${BSP_HAS_PMIC}>:BSP_HAS_PMIC=1>
 )
 
 target_compile_options(kern_simulator PRIVATE
