@@ -3,6 +3,7 @@
 #include "capture_entropy.h"
 
 #include <bsp/esp-bsp.h>
+#include <driver/ppa.h>
 #include <esp_log.h>
 #include <freertos/FreeRTOS.h>
 #include <freertos/task.h>
@@ -19,9 +20,25 @@
 
 static const char *TAG = "capture_entropy";
 
+// Camera preview is a square sized to the smaller display dimension. Sensor
+// outputs 1280x960 (binning mode); we take the full 960x960 vertical area
+// (centered horizontally) and downscale with the PPA in a single pass.
+//
+// PPA uses Q4.4 fixed-point scaling (1/16 increments), so we quantize the
+// scale down to the nearest 1/16 and derive the actual preview size from it.
+//   wave_4b: crop 960, scale 12/16 -> 720x720 preview
+//   wave_35: crop 960, scale  5/16 -> 300x300 preview
+#define CAMERA_INPUT_WIDTH 1280
+#define CAMERA_INPUT_HEIGHT 960
+#define CAMERA_INPUT_CROP CAMERA_INPUT_HEIGHT
+#define CAMERA_INPUT_CROP_OFFSET_X                                             \
+  ((CAMERA_INPUT_WIDTH - CAMERA_INPUT_CROP) / 2)
+#define CAMERA_INPUT_CROP_OFFSET_Y 0
 #define CAMERA_DIM_MIN                                                         \
   ((BSP_LCD_H_RES) < (BSP_LCD_V_RES) ? (BSP_LCD_H_RES) : (BSP_LCD_V_RES))
-#define CAMERA_SIZE ((CAMERA_DIM_MIN) < 640 ? (CAMERA_DIM_MIN) : 640)
+#define CAMERA_PPA_FRAG ((CAMERA_DIM_MIN * 16) / CAMERA_INPUT_CROP)
+#define CAMERA_PPA_SCALE ((float)CAMERA_PPA_FRAG / 16.0f)
+#define CAMERA_SIZE ((CAMERA_INPUT_CROP * CAMERA_PPA_FRAG) / 16)
 #define CAMERA_WIDTH CAMERA_SIZE
 #define CAMERA_HEIGHT CAMERA_SIZE
 #define ENTROPY_THRESHOLD 6.0 // Minimum acceptable entropy (bits)
@@ -43,6 +60,9 @@ static EventGroupHandle_t camera_event_group = NULL;
 static uint8_t *display_buffer_a = NULL;
 static uint8_t *display_buffer_b = NULL;
 static uint8_t *current_display_buffer = NULL;
+static size_t display_buffer_size = 0;
+
+static ppa_client_handle_t cam_ppa_client = NULL;
 
 static volatile bool closing = false;
 static volatile bool is_initialized = false;
@@ -70,9 +90,14 @@ static void low_entropy_prompt_cb(bool retry, void *user_data) {
 }
 
 static uint8_t *allocate_buffer(size_t size) {
-  uint8_t *buf = heap_caps_malloc(size, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+  // PPA writes directly into these buffers, so they must be cache-line aligned.
+  size_t aligned = (size + CONFIG_CACHE_L2_CACHE_LINE_SIZE - 1) &
+                   ~(CONFIG_CACHE_L2_CACHE_LINE_SIZE - 1);
+  uint8_t *buf = heap_caps_aligned_calloc(CONFIG_CACHE_L2_CACHE_LINE_SIZE,
+                                          aligned, 1, MALLOC_CAP_SPIRAM);
   if (!buf)
-    buf = heap_caps_malloc(size, MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT);
+    buf = heap_caps_aligned_calloc(CONFIG_CACHE_L2_CACHE_LINE_SIZE, aligned, 1,
+                                   MALLOC_CAP_INTERNAL);
   return buf;
 }
 
@@ -108,14 +133,18 @@ static double calculate_shannon_entropy(const uint8_t *rgb565_data,
 }
 
 static bool allocate_buffers(void) {
-  size_t display_size = CAMERA_WIDTH * CAMERA_HEIGHT * 2;
+  display_buffer_size = CAMERA_WIDTH * CAMERA_HEIGHT * 2;
+  display_buffer_size =
+      (display_buffer_size + CONFIG_CACHE_L2_CACHE_LINE_SIZE - 1) &
+      ~(CONFIG_CACHE_L2_CACHE_LINE_SIZE - 1);
 
-  display_buffer_a = allocate_buffer(display_size);
-  display_buffer_b = allocate_buffer(display_size);
+  display_buffer_a = allocate_buffer(display_buffer_size);
+  display_buffer_b = allocate_buffer(display_buffer_size);
 
   if (!display_buffer_a || !display_buffer_b) {
     SAFE_FREE_STATIC(display_buffer_a);
     SAFE_FREE_STATIC(display_buffer_b);
+    display_buffer_size = 0;
     return false;
   }
   return true;
@@ -125,23 +154,7 @@ static void free_buffers(void) {
   current_display_buffer = NULL;
   SAFE_FREE_STATIC(display_buffer_a);
   SAFE_FREE_STATIC(display_buffer_b);
-}
-
-static void horizontal_crop(const uint8_t *camera_buf, uint8_t *display_buf,
-                            uint32_t camera_width, uint32_t camera_height) {
-  if (camera_width < CAMERA_WIDTH || camera_height < CAMERA_HEIGHT) {
-    ESP_LOGE(TAG, "Camera resolution too small for crop");
-    return;
-  }
-  uint32_t crop_x = (camera_width - CAMERA_WIDTH) / 2;
-  uint32_t crop_y = (camera_height - CAMERA_HEIGHT) / 2;
-  const uint16_t *src = (const uint16_t *)camera_buf;
-  uint16_t *dst = (uint16_t *)display_buf;
-
-  for (uint32_t y = 0; y < CAMERA_HEIGHT; y++) {
-    memcpy(dst + y * CAMERA_WIDTH, src + (y + crop_y) * camera_width + crop_x,
-           CAMERA_WIDTH * 2);
-  }
+  display_buffer_size = 0;
 }
 
 static void camera_frame_cb(uint8_t *camera_buf, uint8_t camera_buf_index,
@@ -160,7 +173,8 @@ static void camera_frame_cb(uint8_t *camera_buf, uint8_t camera_buf_index,
     return;
   }
 
-  if (!display_buffer_a || !display_buffer_b || !current_display_buffer) {
+  if (!display_buffer_a || !display_buffer_b || !current_display_buffer ||
+      !cam_ppa_client) {
     __atomic_sub_fetch(&active_frame_ops, 1, __ATOMIC_SEQ_CST);
     return;
   }
@@ -169,7 +183,47 @@ static void camera_frame_cb(uint8_t *camera_buf, uint8_t camera_buf_index,
                              ? display_buffer_b
                              : display_buffer_a;
 
-  horizontal_crop(camera_buf, back_buffer, camera_buf_hes, camera_buf_ves);
+#ifdef SIMULATOR
+  uint32_t in_w = camera_buf_hes;
+  uint32_t in_h = camera_buf_ves;
+  uint32_t crop = (in_w < in_h) ? in_w : in_h;
+  uint32_t crop_ox = (in_w - crop) / 2;
+  uint32_t crop_oy = (in_h - crop) / 2;
+  float scale = (float)CAMERA_WIDTH / (float)crop;
+#else
+  uint32_t in_w = CAMERA_INPUT_WIDTH;
+  uint32_t in_h = CAMERA_INPUT_HEIGHT;
+  uint32_t crop = CAMERA_INPUT_CROP;
+  uint32_t crop_ox = CAMERA_INPUT_CROP_OFFSET_X;
+  uint32_t crop_oy = CAMERA_INPUT_CROP_OFFSET_Y;
+  float scale = CAMERA_PPA_SCALE;
+#endif
+
+  ppa_srm_oper_config_t srm = {
+      .in.buffer = camera_buf,
+      .in.pic_w = in_w,
+      .in.pic_h = in_h,
+      .in.block_w = crop,
+      .in.block_h = crop,
+      .in.block_offset_x = crop_ox,
+      .in.block_offset_y = crop_oy,
+      .in.srm_cm = PPA_SRM_COLOR_MODE_RGB565,
+      .out.buffer = back_buffer,
+      .out.buffer_size = display_buffer_size,
+      .out.pic_w = CAMERA_WIDTH,
+      .out.pic_h = CAMERA_HEIGHT,
+      .out.block_offset_x = 0,
+      .out.block_offset_y = 0,
+      .out.srm_cm = PPA_SRM_COLOR_MODE_RGB565,
+      .rotation_angle = PPA_SRM_ROTATION_ANGLE_0,
+      .scale_x = scale,
+      .scale_y = scale,
+      .mode = PPA_TRANS_MODE_BLOCKING,
+  };
+  if (ppa_do_scale_rotate_mirror(cam_ppa_client, &srm) != ESP_OK) {
+    __atomic_sub_fetch(&active_frame_ops, 1, __ATOMIC_SEQ_CST);
+    return;
+  }
 
   if (!closing && !dialog_showing && bsp_display_lock(0)) {
     if (!closing && camera_img) {
@@ -226,6 +280,13 @@ static bool camera_init(void) {
 
   if (app_video_stream_task_start(camera_handle, 0) != ESP_OK)
     return false;
+
+  ppa_client_config_t ppa_cfg = {.oper_type = PPA_OPERATION_SRM};
+  if (ppa_register_client(&ppa_cfg, &cam_ppa_client) != ESP_OK) {
+    ESP_LOGE(TAG, "Failed to register PPA client");
+    cam_ppa_client = NULL;
+    return false;
+  }
 
   return true;
 }
@@ -355,6 +416,11 @@ void capture_entropy_page_destroy(void) {
     bsp_display_unlock();
 
   free_buffers();
+
+  if (cam_ppa_client) {
+    ppa_unregister_client(cam_ppa_client);
+    cam_ppa_client = NULL;
+  }
 
   if (video_initialized) {
     app_video_deinit();
