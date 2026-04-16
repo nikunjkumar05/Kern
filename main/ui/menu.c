@@ -138,6 +138,8 @@ bool ui_menu_add_entry_with_action(ui_menu_t *menu, const char *name,
   lv_obj_set_flex_align(menu->buttons[idx], LV_FLEX_ALIGN_SPACE_BETWEEN,
                         LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
   lv_obj_set_style_pad_column(menu->buttons[idx], 0, 0);
+  /* Flush the action icon to the right edge of the row */
+  lv_obj_set_style_pad_right(menu->buttons[idx], 0, 0);
   lv_obj_add_event_cb(menu->buttons[idx], menu_button_event_cb,
                       LV_EVENT_CLICKED, menu);
   theme_apply_touch_button(menu->buttons[idx], false);
@@ -150,13 +152,17 @@ bool ui_menu_add_entry_with_action(ui_menu_t *menu, const char *name,
   lv_obj_set_style_text_align(label, LV_TEXT_ALIGN_CENTER, 0);
   theme_apply_button_label(label, false);
 
-  /* Action icon button on the right */
+  /* Action icon button on the right — matches the label's vertical extent so
+     the touch target fills the row height (LV_PCT(100) can't resolve against
+     a SIZE_CONTENT parent) */
   lv_obj_t *icon_btn = lv_btn_create(menu->buttons[idx]);
-  lv_obj_set_size(icon_btn, theme_get_min_touch_size(), LV_PCT(100));
-  lv_obj_set_style_bg_opa(icon_btn, LV_OPA_TRANSP, 0);
+  lv_obj_set_size(icon_btn, theme_get_min_touch_size(), LV_SIZE_CONTENT);
+  lv_obj_set_style_bg_color(icon_btn, disabled_color(), 0);
+  lv_obj_set_style_bg_opa(icon_btn, LV_OPA_COVER, 0);
   lv_obj_set_style_shadow_width(icon_btn, 0, 0);
   lv_obj_set_style_border_width(icon_btn, 0, 0);
-  lv_obj_set_style_pad_all(icon_btn, 0, 0);
+  lv_obj_set_style_pad_hor(icon_btn, 0, 0);
+  lv_obj_set_style_pad_ver(icon_btn, 15, 0);
   lv_obj_clear_flag(icon_btn, LV_OBJ_FLAG_EVENT_BUBBLE);
   lv_obj_set_user_data(icon_btn, (void *)(intptr_t)idx);
   lv_obj_add_event_cb(icon_btn, action_button_event_cb, LV_EVENT_CLICKED, menu);
