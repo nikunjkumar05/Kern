@@ -3,26 +3,33 @@ export IDF_PATH_FORCE := "1"
 
 # Board parameter: "wave_4b" (default), "wave_35", or "wave_5"
 # Usage: just build wave_35, just flash wave_4b, just build wave_5
-# Switching boards requires `just clean` first (sdkconfig is board-specific)
+# Each board builds into its own build_<board>/ directory, so switching
+# boards is instant (no clean required) and per-board builds stay incremental.
 
 build board="wave_4b":
-    . $IDF_PATH/export.sh && idf.py -D 'SDKCONFIG_DEFAULTS=sdkconfig.defaults;sdkconfig.defaults.{{board}}' build
-    cp ./build/compile_commands.json ./compile_commands.json
+    #!/usr/bin/env sh
+    command -v idf.py >/dev/null || . $IDF_PATH/export.sh
+    idf.py -B build_{{board}} -D SDKCONFIG=build_{{board}}/sdkconfig -D 'SDKCONFIG_DEFAULTS=sdkconfig.defaults;sdkconfig.defaults.{{board}}' build
+    cp ./build_{{board}}/compile_commands.json ./compile_commands.json
 
 flash board="wave_4b":
-    . $IDF_PATH/export.sh && idf.py -D 'SDKCONFIG_DEFAULTS=sdkconfig.defaults;sdkconfig.defaults.{{board}}' flash
+    #!/usr/bin/env sh
+    command -v idf.py >/dev/null || . $IDF_PATH/export.sh
+    idf.py -B build_{{board}} -D SDKCONFIG=build_{{board}}/sdkconfig -D 'SDKCONFIG_DEFAULTS=sdkconfig.defaults;sdkconfig.defaults.{{board}}' flash
 
-monitor:
-    . $IDF_PATH/export.sh && idf.py monitor
+monitor board="wave_4b":
+    #!/usr/bin/env sh
+    command -v idf.py >/dev/null || . $IDF_PATH/export.sh
+    idf.py -B build_{{board}} -D SDKCONFIG=build_{{board}}/sdkconfig monitor
 
 format:
-    ./format.sh
+    ./scripts/format.sh
 
 test:
-    ./test.sh
+    ./scripts/test.sh
 
 clean:
-    rm -fRd build/
+    rm -fRd build build_wave_4b build_wave_35 build_wave_5
     rm -f sdkconfig
     rm -fRd compile_commands.json
     rm -fRd .cache/

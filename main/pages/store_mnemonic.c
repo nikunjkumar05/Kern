@@ -44,6 +44,10 @@ static void save_success_dialog_cb(void *user_data) {
 }
 
 static void do_save(void) {
+  char saved_id[64] = {0};
+  if (pending_id)
+    snprintf(saved_id, sizeof(saved_id), "%s", pending_id);
+
   esp_err_t ret = storage_save_mnemonic(target_location, pending_id,
                                         pending_envelope, pending_envelope_len);
 
@@ -60,8 +64,9 @@ static void do_save(void) {
   if (ret == ESP_OK) {
     const char *loc_name =
         (target_location == STORAGE_FLASH) ? "flash" : "SD card";
-    char msg[64];
-    snprintf(msg, sizeof(msg), "Mnemonic saved to %s", loc_name);
+    char msg[128];
+    snprintf(msg, sizeof(msg), "Mnemonic saved to %s as: %s", loc_name,
+             saved_id);
     dialog_show_info("Saved", msg, save_success_dialog_cb, NULL,
                      DIALOG_STYLE_OVERLAY);
   } else {
